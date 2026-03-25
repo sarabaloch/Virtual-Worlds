@@ -13,8 +13,15 @@ var angles = [0, 0, 0];
 const SPEED = 0.1;
 const ROT_SPEED = 2.0;
 
+// Chunk system
+const CHUNK_SIZE = 10;
+let currentChunkX = null;
+let currentChunkZ = null;
+
 // Light
 var lightDir = normalize([0.3, 1.0, 0.2]);
+
+var program;
 
 window.onload = function init() {
 
@@ -26,11 +33,10 @@ window.onload = function init() {
     gl.clearColor(0.55, 0.75, 0.95, 1.0);
     gl.enable(gl.DEPTH_TEST);
 
-    var program = initShaders(gl, "vertex-shader", "fragment-shader");
+    program = initShaders(gl, "vertex-shader", "fragment-shader");
     gl.useProgram(program);
 
-    generateWorld();
-    sendToGPU(program);
+    regenerateTerrain();
 
     window.onkeydown = function(event) {
         switch(event.keyCode) {
@@ -46,14 +52,8 @@ window.onload = function init() {
         }
     };
 
-    render(program);
+    render();
 };
-
-// ================= WORLD =================
-
-function generateWorld() {
-    generateTerrain();
-}
 
 // ================= HEIGHT =================
 
@@ -65,18 +65,33 @@ function getHeight(x, z) {
     ) - 0.5;
 }
 
+// ================= FIXED RANDOM =================
+
+function pseudoRandom(x, z) {
+    return Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1;
+}
+
+// ================= WORLD =================
+
+function generateWorld() {
+    // Not used anymore but kept for structure
+}
+
 // ================= TERRAIN =================
 
-function generateTerrain() {
+function generateTerrain(chunkX, chunkZ) {
 
     const SIZE = 40;
     const STEP = 0.25;
 
+    let offsetX = chunkX * CHUNK_SIZE;
+    let offsetZ = chunkZ * CHUNK_SIZE;
+
     for (let i = -SIZE/2; i < SIZE/2; i++) {
         for (let j = -SIZE/2; j < SIZE/2; j++) {
 
-            let x = i * STEP;
-            let z = j * STEP;
+            let x = offsetX + i * STEP;
+            let z = offsetZ + j * STEP;
 
             let a = [x, getHeight(x, z), z];
             let b = [x + STEP, getHeight(x + STEP, z), z];
@@ -87,7 +102,6 @@ function generateTerrain() {
             let n2 = computeNormal(b, d, c);
 
             let h = getHeight(x, z);
-
             let shade = 0.25 + h * 0.15;
 
             let baseColor = [
@@ -99,14 +113,12 @@ function generateTerrain() {
             pushTri(a, b, c, n1, baseColor);
             pushTri(b, d, c, n2, baseColor);
 
-            let r = Math.random();
+            let r = pseudoRandom(x, z);
 
-            // TREE (TRUE 3D)
             if (r < 0.05) {
                 createTree(x, getHeight(x, z), z);
             }
 
-            // ROCK (TRUE 3D)
             if (r > 0.93) {
                 createRock(x, getHeight(x, z), z);
             }
@@ -114,27 +126,52 @@ function generateTerrain() {
     }
 }
 
+// ================= REGENERATE =================
+
+function regenerateTerrain() {
+
+    let newChunkX = Math.floor(eye[0] / CHUNK_SIZE);
+    let newChunkZ = Math.floor(eye[2] / CHUNK_SIZE);
+
+    if (newChunkX === currentChunkX && newChunkZ === currentChunkZ) return;
+
+    currentChunkX = newChunkX;
+    currentChunkZ = newChunkZ;
+
+    points = [];
+    colors = [];
+    normals = [];
+
+    for (let dx = -2; dx <= 2; dx++) {
+        for (let dz = -2; dz <= 2; dz++) {
+            generateTerrain(currentChunkX + dx, currentChunkZ + dz);
+        }
+    }
+
+    sendToGPU();
+}
+
+// ================= TRI =================
+
 function pushTri(a, b, c, n, col) {
     points.push(a, b, c);
     normals.push(n, n, n);
     colors.push(col, col, col);
 }
 
-// ================= TRUE 3D ROCK =================
+// ================= ROCK =================
 
 function createRock(x, y, z) {
 
-    let size = 0.12 + Math.random() * 0.1;
+    let size = 0.12 + pseudoRandom(x, z) * 0.1;
     let sides = 10;
-
-    let center = [x, y, z];
 
     let verts = [];
 
     for (let i = 0; i < sides; i++) {
 
         let theta = (i / sides) * Math.PI * 2;
-        let phi = Math.random() * Math.PI;
+        let phi = pseudoRandom(x + i, z) * Math.PI;
 
         verts.push([
             x + Math.sin(phi) * Math.cos(theta) * size,
@@ -156,7 +193,7 @@ function createRock(x, y, z) {
     }
 }
 
-// ================= TRUE 3D TREE =================
+// ================= TREE =================
 
 function createTree(cx, cy, cz) {
 
@@ -168,7 +205,6 @@ function createTree(cx, cy, cz) {
 
     let sides = 10;
 
-    // trunk cylinder
     for (let i = 0; i < sides; i++) {
 
         let a = (i / sides) * Math.PI * 2;
@@ -184,7 +220,6 @@ function createTree(cx, cy, cz) {
         pushTri(p2, p4, p3, [0,1,0], brown);
     }
 
-    // foliage cone layers
     let layers = 4;
 
     for (let l = 0; l < layers; l++) {
@@ -210,17 +245,8 @@ function createTree(cx, cy, cz) {
 
 function computeNormal(a, b, c) {
 
-    let u = [
-        b[0]-a[0],
-        b[1]-a[1],
-        b[2]-a[2]
-    ];
-
-    let v = [
-        c[0]-a[0],
-        c[1]-a[1],
-        c[2]-a[2]
-    ];
+    let u = [b[0]-a[0], b[1]-a[1], b[2]-a[2]];
+    let v = [c[0]-a[0], c[1]-a[1], c[2]-a[2]];
 
     return normalize([
         u[1]*v[2] - u[2]*v[1],
@@ -231,7 +257,7 @@ function computeNormal(a, b, c) {
 
 // ================= GPU =================
 
-function sendToGPU(program) {
+function sendToGPU() {
 
     let cBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
@@ -262,7 +288,9 @@ function sendToGPU(program) {
 
 // ================= RENDER =================
 
-function render(program) {
+function render() {
+
+    regenerateTerrain();
 
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
@@ -284,6 +312,5 @@ function render(program) {
 
     gl.drawArrays(gl.TRIANGLES, 0, points.length);
 
-    requestAnimFrame(() => render(program));
+    requestAnimFrame(render);
 }
-
