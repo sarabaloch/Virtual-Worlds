@@ -22,6 +22,7 @@ let currentChunkZ = null;
 // Light: sun directly above (90 degrees elevation).
 var lightDir = normalize([0.0, 1.0, 0.0]);
 var sunPos = [0.0, 7.5, 0.0];
+let sunCreated = false;
 
 var program;
 
@@ -41,6 +42,19 @@ window.onload = function init() {
     gl.useProgram(program);
 
     regenerateTerrain();
+
+    //sun generation
+    if (sunCreated) {
+        createSun(sunPos[0], sunPos[1], sunPos[2], 0.7);
+    }
+    if (!sunCreated) {
+        sunPos = [0.0, 7.5, 0.0]; // fixed world position
+        createSun(sunPos[0], sunPos[1], sunPos[2], 0.7);
+        sunCreated = true;
+
+        sendToGPU(); // update buffers to include sun
+    }
+
 
     window.onkeydown = function(event) {
         const key = event.key; // use modern key property
@@ -62,7 +76,8 @@ window.onload = function init() {
 
     render();
 };
-// ================= CAMERA MOVEMENT =================
+
+//================= CAMERA MOVEMENT =================
 let cameraPos = [0, 1.5, 0]; // starting camera position
 let cameraTarget = [0, 1.5, -1]; // forward direction
 let cameraUp = [0, 1, 0];
@@ -203,8 +218,8 @@ function regenerateTerrain() {
     }
 
     // Add the sun as a visible scene object and use same position for lighting.
-    sunPos = [currentChunkX * CHUNK_SIZE, 7.5, currentChunkZ * CHUNK_SIZE];
-    createSun(sunPos[0], sunPos[1], sunPos[2], 0.7);
+    //sunPos = [currentChunkX * CHUNK_SIZE, 7.5, currentChunkZ * CHUNK_SIZE];
+    //createSun(sunPos[0], sunPos[1], sunPos[2], 0.7);
 
     sendToGPU();
 }
@@ -460,7 +475,8 @@ function render() {
         eye,
         [eye[0], eye[1] - 0.1, eye[2] - 1.5],
         up
-    );
+    )
+    //mouse
 
     mv = mult(mv, rotateX(angles[0]));
     mv = mult(mv, rotateY(angles[1]));
