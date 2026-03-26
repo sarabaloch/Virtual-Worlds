@@ -245,3 +245,15 @@ return[[1,0,0,0],[0,c,s,0],[0,-s,c,0],[0,0,0,1]];}
 
 function rotateY(d){var c=Math.cos(d*Math.PI/180),s=Math.sin(d*Math.PI/180);
 return[[c,0,-s,0],[0,1,0,0],[s,0,c,0],[0,0,0,1]];}
+
+// ================= NORMAL =================
+function computeNormal(a, b, c) {
+    let u = [b[0]-a[0], b[1]-a[1], b[2]-a[2]];
+    let v = [c[0]-a[0], c[1]-a[1], c[2]-a[2]];
+    
+    return normalize([
+        u[1]*v[2] - u[2]*v[1],
+        u[2]*v[0] - u[0]*v[2],
+        u[0]*v[1] - u[1]*v[0]
+    ]);
+}
