@@ -5,22 +5,32 @@
     <title>Hidden Forest - Project 1</title>
     
     <script id="vertex-shader" type="x-shader/x-vertex">
-        attribute vec3 vPosition;
+        attribute vec4 vPosition;
         attribute vec3 vColor;
         attribute vec3 vNormal;
+        attribute float vEmissive;
 
         uniform mat4 modelViewMatrix;
         uniform mat4 projectionMatrix;
+        uniform highp vec3 sunPos;
 
         varying vec3 fColor;
         varying vec3 fNormal;
+        varying vec3 fPosition;
+        varying vec3 fWorldPos;
+        varying vec3 fLightDirView;
+        varying float fEmissive;
 
-        void main(){
-
+        void main() {
+            vec4 pos = modelViewMatrix * vPosition;
+            fPosition = pos.xyz;
+            fNormal = normalize(mat3(modelViewMatrix) * vNormal);
             fColor = vColor;
-            fNormal = vNormal;
-
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(vPosition, 1.0);
+            fWorldPos = vPosition.xyz;
+            vec3 Lworld = normalize(sunPos - vPosition.xyz);
+            fLightDirView = normalize((modelViewMatrix * vec4(Lworld, 0.0)).xyz);
+            fEmissive = vEmissive;
+            gl_Position = projectionMatrix * pos;
         }
     </script>
 
@@ -29,30 +39,54 @@
 
         varying vec3 fColor;
         varying vec3 fNormal;
+        varying vec3 fPosition;
+        varying vec3 fWorldPos;
+        varying vec3 fLightDirView;
+        varying float fEmissive;
 
-        uniform vec3 lightDir;
+        uniform float fogDensity;
+        uniform highp vec3 sunPos;
 
         void main() {
-
             vec3 N = normalize(fNormal);
-            vec3 L = normalize(lightDir);
+            vec3 V = normalize(-fPosition);
+            vec3 L = normalize(fLightDirView);
+            vec3 R = reflect(-L, N);
+            float alpha = 1.0;
 
-            float diff = max(dot(N, L), 0.0);
+            float ndl = max(dot(N, L), 0.0);
 
-            float ambient = 0.4;
-            float lighting = ambient + 0.6 * diff;
+            // Ambient + diffuse
+            float ambient = 0.20 + 0.15 * clamp(N.y, 0.0, 1.0);
+            float diffuse = ndl * 0.95;
+            vec3 color = fColor * (ambient + diffuse);
 
-            vec3 col = fColor * lighting;
+            // Specular
+            float spec = pow(max(dot(V, R), 0.0), 28.0) * 0.14 * step(0.0, ndl);
+            color += spec;
 
-            // 🌫️ SIMPLE FOG (CRITICAL)
-            float depth = gl_FragCoord.z / gl_FragCoord.w;
-            float fog = exp(-depth * 0.12);
+            // Emissive (sun/halo)
+            if (fEmissive > 0.01) {
+                float ndv = max(dot(N, V), 0.0);
+                float rim = pow(1.0 - ndv, 2.6);
 
-            vec3 fogColor = vec3(0.55, 0.75, 0.95);
+                if (fEmissive > 0.7) {
+                    color = fColor * 1.35 + vec3(0.30,0.20,0.06) * (0.35 + rim * 0.3);
+                    alpha = 1.0;
+                } else {
+                    color = fColor * (1.1 + 2.4 * rim) + vec3(0.55,0.30,0.10) * (0.55 + 1.8 * rim);
+                    alpha = clamp(0.18 + 0.62 * rim, 0.18, 0.85);
+                }
+            }
 
-            col = mix(fogColor, col, fog);
+            float dist = length(fPosition);
+            float fog = exp(-fogDensity * dist);
+            vec3 sky = vec3(0.55, 0.75, 0.95);
+            float fogFactor = mix(fog, 1.0, clamp(fEmissive * 0.85, 0.0, 1.0));
+            fogFactor = mix(0.75, fogFactor, 0.6); // lighter fog
+            color = mix(sky, color, fogFactor);
 
-            gl_FragColor = vec4(col, 1.0);
+            gl_FragColor = vec4(color, alpha);
         }
     </script>
 
@@ -69,9 +103,9 @@
     
     <div style="color: white; font-family: sans-serif; text-align: center; margin-top: 10px;">
         <h3>Hidden Forest - Project 1</h3>
-        <p><b>WASD:</b> Move around the terrain [cite: 31]</p>
-        <p><b>Arrow Keys:</b> Look around (Pitch & Yaw) [cite: 17, 18]</p>
-        <p><i>Mode: Smooth Shading [cite: 23, 24]</i></p>
+        <p><b>WASD:</b> Move around the terrain</p>
+        <p><b>Arrow Keys:</b> Look around (Pitch & Yaw)</p>
+        <p><i>Mode: Smooth Shading</i></p>
     </div>
 </body>
 </html>
