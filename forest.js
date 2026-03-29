@@ -1,46 +1,45 @@
 "use strict";
 
+// global variables
 var gl;
 var points = [];
 var colors = [];
 var normals = [];
 var emissive = [];
 
-// Camera system for WASD + mouse look
+// camera state
 var camera = {
-    position: [0.0, 0.2, 5.0],
-    yaw: -90.0,   // horizontal angle (degrees)
-    pitch: 0.0,   // vertical angle (degrees)
-    forward: [0, 0, -1],
-    right: [1, 0, 0],
-    up: [0, 1, 0]
+    position: [0.0, 0.2, 5.0], // start slightly above ground to avoid immediate collision
+    yaw: -90.0,   // facing towards negative Z
+    pitch: 0.0, // level with horizon
+    forward: [0, 0, -1], // will be calculated from yaw/pitch
+    right: [1, 0, 0], // will be calculated from forward
+    up: [0, 1, 0] // world up is always Y-axis
 };
 
-// Movement state
+// input keys
 var keys = {
     w: false, s: false, a: false, d: false,
     arrowUp: false, arrowDown: false, arrowLeft: false, arrowRight: false,
     space: false, ctrl: false
 };
 
-const MOVE_SPEED = 5.0;      // units per second
-const VERTICAL_SPEED = 3.0;   // vertical movement speed
-const MOUSE_SENSITIVITY = 0.2; // degrees per pixel
+// movement parameters
+const MOVE_SPEED = 5.0; // how fast u move forward/back
+const VERTICAL_SPEED = 3.0; // how fast u move up or down
+const MOUSE_SENSITIVITY = 0.2; // how fast camera rotates based on mouse movement
 
-// Mouse capture state
 var mouseLocked = false;
+const CHUNK_SIZE = 10; // how big each terrain chunk is in world units
+let currentChunkX = null; // which chunk the camera is currently in (used for terrain generation)
+let currentChunkZ = null; 
 
-// Chunk system
-const CHUNK_SIZE = 10;
-let currentChunkX = null;
-let currentChunkZ = null;
+var lightDir = normalize([0.0, 1.0, 0.0]); // default light direction (overridden by presets)
+var program; 
+var lastTimestamp = 0; // for tracking time between frames
 
-// Light: sun directly above (90 degrees elevation).
-var lightDir = normalize([0.0, 1.0, 0.0]);
-var program;
-var lastTimestamp = 0;
-
-window.onload = function init() {
+// precompute a few lighting presets for different times of day
+window.onload = function init() { // initialize WebGL context, set up event listeners, and start render loop
     var canvas = document.getElementById("gl-canvas");
     gl = WebGLUtils.setupWebGL(canvas);
     if (!gl) { alert("WebGL isn't available"); }
@@ -54,31 +53,27 @@ window.onload = function init() {
     program = initShaders(gl, "vertex-shader", "fragment-shader");
     gl.useProgram(program);
 
-    // Generate initial terrain
-    regenerateTerrain(false); // false = don't add sun yet
+    regenerateTerrain(false); 
 
-
-    // Setup keyboard event listeners
+    // set up keyboard input listeners for movement and looking around
     window.addEventListener('keydown', function(event) {
         const key = event.key.toLowerCase();
         
-        // WASD movement keys
         if (key === 'w') keys.w = true;
         if (key === 's') keys.s = true;
         if (key === 'a') keys.a = true;
         if (key === 'd') keys.d = true;
         
-        // Arrow keys for looking around
         if (key === 'arrowup')    { keys.arrowUp    = true; event.preventDefault(); }
         if (key === 'arrowdown')  { keys.arrowDown  = true; event.preventDefault(); }
         if (key === 'arrowleft')  { keys.arrowLeft  = true; event.preventDefault(); }
         if (key === 'arrowright') { keys.arrowRight = true; event.preventDefault(); }
 
-        // Vertical movement
         if (event.code === 'Space')   { keys.space = true;  event.preventDefault(); }
         if (key === 'control')        { keys.ctrl  = true;  event.preventDefault(); }
     });
     
+    // release keys on keyup
     window.addEventListener('keyup', function(event) {
         const key = event.key.toLowerCase();
         if (key === 'w') keys.w = false;
@@ -93,16 +88,17 @@ window.onload = function init() {
         if (key === 'control')      keys.ctrl  = false;
     });
     
-    // Mouse look: capture and hide cursor on click
+    // set up mouse click listener to lock pointer for camera control
     canvas.addEventListener('click', function() {
-        canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
-        canvas.requestPointerLock();
+        canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock; 
+        canvas.requestPointerLock(); // this will trigger pointerlockchange event when done
     });
     
-    // Handle pointer lock change
+    // listen for pointer lock changes to enable/disable mouse movement tracking
     document.addEventListener('pointerlockchange', lockChange);
-    document.addEventListener('mozpointerlockchange', lockChange);
+    document.addEventListener('mozpointerlockchange', lockChange); // (things added for firefox support)
     
+    // function to handle pointer lock state changes - when locked, we track mouse movement for camera control; when unlocked, we stop tracking
     function lockChange() {
         if (document.pointerLockElement === canvas) {
             mouseLocked = true;
@@ -114,50 +110,43 @@ window.onload = function init() {
             document.removeEventListener('mousemove', onMouseMove);
         }
     }
-    
+
+    // function to handle mouse movement events when pointer is locked - updates camera yaw and pitch based on mouse movement, with sensitivity scaling. also clamps pitch to prevent flipping over
     function onMouseMove(e) {
         if (!mouseLocked) return;
         
-        // Get mouse movement
         var deltaX = e.movementX || e.mozMovementX || 0;
         var deltaY = e.movementY || e.mozMovementY || 0;
         
-        // Update yaw (horizontal rotation) and pitch (vertical rotation)
         camera.yaw += deltaX * MOUSE_SENSITIVITY;
         camera.pitch -= deltaY * MOUSE_SENSITIVITY;
         
-        // Clamp pitch to prevent looking upside down
         if (camera.pitch > 89.0) camera.pitch = 89.0;
         if (camera.pitch < -89.0) camera.pitch = -89.0;
         
-        // Update forward and right vectors based on new angles
         updateCameraVectors();
     }
     
-    // Initialize camera vectors
     updateCameraVectors();
     
-    // Start render loop with time-based movement
     lastTimestamp = performance.now();
     render();
 };
 
+// function to flatten array of vec3 into float32array for webGL buffer data
 function flattenScalars(arr) {
     return new Float32Array(arr);
 }
 
-// Update camera direction vectors based on yaw and pitch
+// function to update camera forward and right vectors based on current yaw and pitch angles. calculates forward vector from spherical coordinates, then derives right vector as perpendicular to forward and world up. also normalizes both vectors to ensure consistent movement speed in all directions.
 function updateCameraVectors() {
-    // Convert to radians
     var yawRad = camera.yaw * Math.PI / 180;
     var pitchRad = camera.pitch * Math.PI / 180;
     
-    // Calculate forward vector
     camera.forward[0] = Math.cos(yawRad) * Math.cos(pitchRad);
     camera.forward[1] = Math.sin(pitchRad);
     camera.forward[2] = Math.sin(yawRad) * Math.cos(pitchRad);
     
-    // Normalize forward
     var len = Math.sqrt(camera.forward[0]*camera.forward[0] + 
                         camera.forward[1]*camera.forward[1] + 
                         camera.forward[2]*camera.forward[2]);
@@ -165,7 +154,6 @@ function updateCameraVectors() {
     camera.forward[1] /= len;
     camera.forward[2] /= len;
     
-    // Calculate right vector (cross product of forward and global up)
     camera.right[0] = camera.forward[2];
     camera.right[1] = 0;
     camera.right[2] = -camera.forward[0];
@@ -176,12 +164,11 @@ function updateCameraVectors() {
     }
 }
 
-// Update camera position based on WASD and arrow key input (time-based movement)
+// function to update camera position based on currently pressed movement keys (WASD for horizontal movement, space/ctrl for vertical). calculates movement based on camera forward and right vectors, applies speed scaling and deltatime for frame rate independence. also checks terrain height at new position to prevent sinking below ground level.
 function updateMovement(deltaTime) {
-    var speed = (MOVE_SPEED * 0.5) * deltaTime; // Slower movement speed as requested
+    var speed = (MOVE_SPEED * 0.5) * deltaTime;
     var moveDelta = [0, 0, 0];
     
-    // W = forward, S = backward (relative to look direction, XZ only)
     if (keys.w) {
         moveDelta[0] += camera.forward[0] * speed;
         moveDelta[2] += camera.forward[2] * speed;
@@ -190,7 +177,6 @@ function updateMovement(deltaTime) {
         moveDelta[0] -= camera.forward[0] * speed;
         moveDelta[2] -= camera.forward[2] * speed;
     }
-    // A = strafe right, D = strafe left
     if (keys.a) {
         moveDelta[0] += camera.right[0] * speed;
         moveDelta[2] += camera.right[2] * speed;
@@ -200,20 +186,16 @@ function updateMovement(deltaTime) {
         moveDelta[2] -= camera.right[2] * speed;
     }
 
-    // Vertical movement — Space = up, Ctrl = down
     var vSpeed = VERTICAL_SPEED * deltaTime;
     if (keys.space) moveDelta[1] += vSpeed;
     if (keys.ctrl)  moveDelta[1] -= vSpeed;
     
-    // Apply movement
     let newX = camera.position[0] + moveDelta[0];
     let newY = camera.position[1] + moveDelta[1];
     let newZ = camera.position[2] + moveDelta[2];
     
-    // Get terrain height at new position
     let terrainHeight = getHeight(newX, newZ);
     
-    // Prevent going below the surface (keep camera at least 0.5 units above ground)
     if (newY < terrainHeight + 0.5) {
         newY = terrainHeight + 0.5;
     }
@@ -223,7 +205,7 @@ function updateMovement(deltaTime) {
     camera.position[2] = newZ;
 }
 
-// ================= HEIGHT =================
+// procedural height function that generates terrain height based on a combination of sine and cosine waves at different frequencies and amplitudes. this creates a varied landscape with hills and valleys. the final result is offset downwards to ensure the terrain is mostly below y=0, allowing the camera to start above ground level. (asked ai for help with this)
 function getHeight(x, z) {
     return (
         Math.sin(x * 1.2) * Math.cos(z * 1.2) * 0.22 +
@@ -232,12 +214,11 @@ function getHeight(x, z) {
     ) - 0.5;
 }
 
-// ================= FIXED RANDOM =================
+// simple pseudo-random function based on sine of a combination of x and z coordinates. this is used to add random variation to tree placement and rock generation while still being deterministic (the same x,z will always produce the same random value). the output is a value between 0 and 1.
 function pseudoRandom(x, z) {
     return Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1;
 }
 
-// ================= TERRAIN =================
 function generateTerrain(chunkX, chunkZ) {
     const SIZE = 40;
     const STEP = 0.25;
@@ -283,7 +264,6 @@ function generateTerrain(chunkX, chunkZ) {
     }
 }
 
-// ================= REGENERATE =================
 function regenerateTerrain(skipSun) {
     let newChunkX = Math.floor(camera.position[0] / CHUNK_SIZE);
     let newChunkZ = Math.floor(camera.position[2] / CHUNK_SIZE);
@@ -293,13 +273,11 @@ function regenerateTerrain(skipSun) {
     currentChunkX = newChunkX;
     currentChunkZ = newChunkZ;
     
-    // Clear everything
     points = [];
     colors = [];
     normals = [];
     emissive = [];
     
-    // Generate new terrain
     for (let dx = -2; dx <= 2; dx++) {
         for (let dz = -2; dz <= 2; dz++) {
             generateTerrain(currentChunkX + dx, currentChunkZ + dz);
@@ -309,7 +287,6 @@ function regenerateTerrain(skipSun) {
     sendToGPU();
 }
 
-// ================= TRI =================
 function pushTri(a, b, c, n, col, emitStrength) {
     let e = (emitStrength === undefined) ? 0.0 : emitStrength;
     points.push(a, b, c);
@@ -318,7 +295,6 @@ function pushTri(a, b, c, n, col, emitStrength) {
     emissive.push(e, e, e);
 }
 
-// ================= ROCK =================
 function createRock(x, y, z) {
     let size = 0.08 + pseudoRandom(x, z) * 0.18;
     let sides = 10;
@@ -345,7 +321,6 @@ function createRock(x, y, z) {
     }
 }
 
-// ================= TREE =================
 function createTree(cx, cy, cz) {
     let rand1 = pseudoRandom(cx, cz);
     let rand2 = pseudoRandom(cx+1, cz+1);
@@ -356,33 +331,29 @@ function createTree(cx, cy, cz) {
     let brown = [0.28 + rand3*0.14, 0.16 + rand3*0.10, 0.07 + rand3*0.06];
     let sides = 8;
 
-    // Pick tree archetype from 3 shapes
     let archetype = Math.floor(rand5 * 3); // 0=spire, 1=bushy, 2=twisted
 
     let trunkH, trunkR, layers, baseRadius, coneH, overlap, tipSharpness, radiusCurve;
 
     if (archetype === 0) {
-        // SPIRE — tall, narrow, many tight layers, sharp tips
         trunkH      = 0.8 + rand1 * 0.6;
         trunkR      = 0.035 + rand2 * 0.025;
         layers      = 6 + Math.floor(rand4 * 3);
         baseRadius  = 0.22 + rand1 * 0.08;
         coneH       = 0.22 + rand2 * 0.06;
         overlap     = 0.10;
-        tipSharpness = 0.70; // radius shrinks fast toward top
-        radiusCurve  = 1.0;  // linear
+        tipSharpness = 0.70;
+        radiusCurve  = 1.0;  
     } else if (archetype === 1) {
-        // BUSHY — short, wide, fewer layers that flare outward at the bottom
         trunkH      = 0.35 + rand1 * 0.25;
         trunkR      = 0.06 + rand2 * 0.05;
         layers      = 3 + Math.floor(rand4 * 2);
         baseRadius  = 0.55 + rand1 * 0.20;
         coneH       = 0.38 + rand2 * 0.10;
         overlap     = 0.18;
-        tipSharpness = 0.40; // stays wide all the way up
-        radiusCurve  = 0.7;  // flattened falloff
+        tipSharpness = 0.40; 
+        radiusCurve  = 0.7;  
     } else {
-        // TWISTED — lopsided, asymmetric offsets per layer, medium height
         trunkH      = 0.55 + rand1 * 0.45;
         trunkR      = 0.045 + rand2 * 0.04;
         layers      = 4 + Math.floor(rand4 * 3);
@@ -393,7 +364,6 @@ function createTree(cx, cy, cz) {
         radiusCurve  = 1.0;
     }
 
-    // Trunk
     for (let i = 0; i < sides; i++) {
         let a  = (i / sides) * Math.PI * 2;
         let b  = ((i+1) / sides) * Math.PI * 2;
@@ -405,14 +375,12 @@ function createTree(cx, cy, cz) {
         pushTri(p2, p4, p3, computeNormal(p2,p4,p3), brown);
     }
 
-    // Canopy layers
     for (let l = 0; l < layers; l++) {
         let t       = l / (layers - 1);
         let layerY  = cy + trunkH + l * (coneH - overlap);
         let r       = baseRadius * (1.0 - Math.pow(t, radiusCurve) * tipSharpness);
         let tipY    = layerY + coneH;
 
-        // Twisted trees: offset each layer's tip slightly for a leaning look
         let offX = 0, offZ = 0;
         if (archetype === 2) {
             offX = pseudoRandom(cx + l*7.3, cz + l*2.1) * 0.12 - 0.06;
@@ -422,7 +390,6 @@ function createTree(cx, cy, cz) {
 
         let brightness  = 0.76 + t * 0.24;
         let greenShift  = rand3 * 0.10;
-        // Bushy trees lean more yellow-green, spires more blue-green
         let blueShift   = (archetype === 0) ? 0.06 : 0.0;
         let layerColor  = [
             (0.09 + greenShift) * brightness,
@@ -462,7 +429,6 @@ function createTreeShadow(x, y, z, radius) {
     }
 }
 
-// ================= GPU =================
 function sendToGPU() {
     let cBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
@@ -501,7 +467,6 @@ function sendToGPU() {
     
 }
 
-// ================= LIGHTING PRESETS =================
 var lightingPresets = {
     daytime: {
         lightDir:     [0.2,  1.0, -1.8],
@@ -578,7 +543,6 @@ function setPreset(name) {
     let sc = currentPreset.skyColor;
     gl.clearColor(sc[0], sc[1], sc[2], 1.0);
 
-    // Update active button style
     document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
     let btn = document.getElementById('btn-' + name);
     if (btn) btn.classList.add('active');
@@ -604,29 +568,24 @@ function render() {
     let deltaTime = Math.min(0.033, (now - lastTimestamp) / 1000);
     lastTimestamp = now;
 
-    // Arrow keys: look up/down (pitch) and look left/right (yaw)
-    const rotationSpeed = 50.0 * deltaTime; // Degrees per second
+    const rotationSpeed = 50.0 * deltaTime; 
     if (keys.arrowUp)    camera.pitch += rotationSpeed;
     if (keys.arrowDown)  camera.pitch -= rotationSpeed;
     if (keys.arrowLeft)  camera.yaw   -= rotationSpeed;
     if (keys.arrowRight) camera.yaw   += rotationSpeed;
 
-    // Keep pitch clamped
     camera.pitch = Math.max(-89, Math.min(89, camera.pitch));
 
     updateCameraVectors();
     
-    // Update movement based on pressed keys
     updateMovement(deltaTime);
     
-    // Regenerate terrain based on new camera position (preserving sun)
     regenerateTerrain(true);
     
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     
     let p = perspective(75, gl.canvas.width / gl.canvas.height, 0.1, 100.0);
     
-    // Create view matrix from camera orientation
     let target = [
         camera.position[0] + camera.forward[0],
         camera.position[1] + camera.forward[1],
