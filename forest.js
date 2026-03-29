@@ -27,14 +27,10 @@ var keys = {
 // movement parameters
 const MOVE_SPEED = 5.0; // how fast u move forward/back
 const VERTICAL_SPEED = 3.0; // how fast u move up or down
-const MOUSE_SENSITIVITY = 0.2; // how fast camera rotates based on mouse movement
-
-var mouseLocked = false;
 const CHUNK_SIZE = 10; // how big each terrain chunk is in world units
 let currentChunkX = null; // which chunk the camera is currently in (used for terrain generation)
 let currentChunkZ = null; 
 
-var lightDir = normalize([0.0, 1.0, 0.0]); // default light direction (overridden by presets)
 var program; 
 var lastTimestamp = 0; // for tracking time between frames
 
@@ -87,45 +83,6 @@ window.onload = function init() { // initialize WebGL context, set up event list
         if (event.code === 'Space') keys.space = false;
         if (key === 'control')      keys.ctrl  = false;
     });
-    
-    // set up mouse click listener to lock pointer for camera control
-    canvas.addEventListener('click', function() {
-        canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock; 
-        canvas.requestPointerLock(); // this will trigger pointerlockchange event when done
-    });
-    
-    // listen for pointer lock changes to enable/disable mouse movement tracking
-    document.addEventListener('pointerlockchange', lockChange);
-    document.addEventListener('mozpointerlockchange', lockChange); // (things added for firefox support)
-    
-    // function to handle pointer lock state changes - when locked, we track mouse movement for camera control; when unlocked, we stop tracking
-    function lockChange() {
-        if (document.pointerLockElement === canvas) {
-            mouseLocked = true;
-            console.log("Mouse locked - move mouse to look around 360°");
-            document.addEventListener('mousemove', onMouseMove);
-        } else {
-            mouseLocked = false;
-            console.log("Mouse unlocked - click canvas to re-enable");
-            document.removeEventListener('mousemove', onMouseMove);
-        }
-    }
-
-    // function to handle mouse movement events when pointer is locked - updates camera yaw and pitch based on mouse movement, with sensitivity scaling. also clamps pitch to prevent flipping over
-    function onMouseMove(e) {
-        if (!mouseLocked) return;
-        
-        var deltaX = e.movementX || e.mozMovementX || 0;
-        var deltaY = e.movementY || e.mozMovementY || 0;
-        
-        camera.yaw += deltaX * MOUSE_SENSITIVITY;
-        camera.pitch -= deltaY * MOUSE_SENSITIVITY;
-        
-        if (camera.pitch > 89.0) camera.pitch = 89.0;
-        if (camera.pitch < -89.0) camera.pitch = -89.0;
-        
-        updateCameraVectors();
-    }
     
     updateCameraVectors();
     
@@ -462,9 +419,6 @@ function sendToGPU() {
     gl.vertexAttribPointer(vEmissive, 1, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(vEmissive);
     
-    let lightLoc = gl.getUniformLocation(program, "lightDir");
-    if (lightLoc) gl.uniform3fv(lightLoc, flatten(lightDir));
-    
 }
 
 var lightingPresets = {
@@ -598,7 +552,6 @@ function render() {
     gl.uniformMatrix4fv(gl.getUniformLocation(program, "projectionMatrix"), false, flatten(p));
     
     applyLightingUniforms();
-    gl.uniform1f(gl.getUniformLocation(program, "fogDensity"), 0.12);
     
     gl.drawArrays(gl.TRIANGLES, 0, points.length);
     
