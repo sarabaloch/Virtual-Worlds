@@ -12,23 +12,22 @@
 
         uniform mat4 modelViewMatrix;
         uniform mat4 projectionMatrix;
-        uniform highp vec3 sunPos;
 
         varying vec3 fColor;
         varying vec3 fNormal;
         varying vec3 fPosition;
-        varying vec3 fWorldPos;
-        varying vec3 fLightDirView;
+        varying vec3 fLightDir;
         varying float fEmissive;
 
         void main() {
             vec4 pos = modelViewMatrix * vPosition;
             fPosition = pos.xyz;
             fNormal = normalize(mat3(modelViewMatrix) * vNormal);
+
+            // Fixed world-space direction — NOT rotated with camera
+            fLightDir = normalize(vec3(0.4, 1.0, 0.3));
+
             fColor = vColor;
-            fWorldPos = vPosition.xyz;
-            vec3 Lworld = normalize(sunPos - vPosition.xyz);
-            fLightDirView = normalize((modelViewMatrix * vec4(Lworld, 0.0)).xyz);
             fEmissive = vEmissive;
             gl_Position = projectionMatrix * pos;
         }
@@ -40,30 +39,32 @@
         varying vec3 fColor;
         varying vec3 fNormal;
         varying vec3 fPosition;
-        varying vec3 fWorldPos;
-        varying vec3 fLightDirView;
+        varying vec3 fLightDir;
         varying float fEmissive;
 
         uniform float fogDensity;
-        uniform highp vec3 sunPos;
 
         void main() {
             vec3 N = normalize(fNormal);
             vec3 V = normalize(-fPosition);
-            vec3 L = normalize(fLightDirView);
+            vec3 L = fLightDir;
             vec3 R = reflect(-L, N);
             float alpha = 1.0;
 
             float ndl = max(dot(N, L), 0.0);
 
-            // Ambient + diffuse
-            float ambient = 0.20 + 0.15 * clamp(N.y, 0.0, 1.0);
-            float diffuse = ndl * 0.95;
-            vec3 color = fColor * (ambient + diffuse);
+            // Bright ambient so nothing goes fully dark
+            float ambient = 0.35 + 0.10 * clamp(N.y, 0.0, 1.0);
 
-            // Specular
-            float spec = pow(max(dot(V, R), 0.0), 28.0) * 0.14 * step(0.0, ndl);
-            color += spec;
+            // Strong diffuse with warm sun tint
+            vec3 sunColor = vec3(1.10, 0.95, 0.75);
+            float diffuse = ndl * 1.1;
+
+            vec3 color = fColor * ambient + fColor * sunColor * diffuse;
+
+            // Warm specular highlight
+            float spec = pow(max(dot(V, R), 0.0), 24.0) * 0.18 * step(0.0, ndl);
+            color += vec3(1.0, 0.95, 0.8) * spec;
 
             // Emissive (sun/halo)
             if (fEmissive > 0.01) {
@@ -79,12 +80,13 @@
                 }
             }
 
+            // Fog — much less aggressive, only kicks in at distance
             float dist = length(fPosition);
-            float fog = exp(-fogDensity * dist);
+            float fog = exp(-fogDensity * dist * 0.4);  // 0.4 = pull fog way back
             vec3 sky = vec3(0.55, 0.75, 0.95);
             float fogFactor = mix(fog, 1.0, clamp(fEmissive * 0.85, 0.0, 1.0));
-            fogFactor = mix(0.75, fogFactor, 0.6); // lighter fog
-            color = mix(sky, color, fogFactor);
+            // Don't force a minimum fog — let nearby colors stay pure
+            color = mix(sky, color, clamp(fogFactor, 0.0, 1.0));
 
             gl_FragColor = vec4(color, alpha);
         }
@@ -94,7 +96,6 @@
     <script type="text/javascript" src="initShaders.js"></script>
     <script type="text/javascript" src="common.js"></script>
     <script type="text/javascript" src="forest.js"></script>
-    <script type="text/javascript" src="lighting.js"></script>
 </head>
 <body style="background-color: #1a2a2a; margin: 0; display: flex; flex-direction: column; align-items: center;">
     <canvas id="gl-canvas" width="800" height="600" style="border: 1px solid #334444; margin-top: 20px;">

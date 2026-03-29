@@ -35,7 +35,7 @@ let currentChunkZ = null;
 
 // Light: sun directly above (90 degrees elevation).
 var lightDir = normalize([0.0, 1.0, 0.0]);
-var sunPos = [0.0, 7.5, 0.0];
+var sunPos = [camera.position[0], 7.5, camera.position[2]];
 let sunCreated = false;
 let sunVertexStart = 0; // Track where sun vertices start
 let sunVertexCount = 0; // Track how many vertices the sun uses
@@ -62,7 +62,8 @@ window.onload = function init() {
 
     // Create sun ONCE at initialization, keep it permanently
     if (!sunCreated) {
-        sunPos = [0.0, 7.5, 0.0];
+        // Keep sun centered above player
+        sunPos = [camera.position[0], 7.5, camera.position[2]];
         sunVertexStart = points.length; // Record where sun starts
         createSun(sunPos[0], sunPos[1], sunPos[2], 0.7);
         sunVertexCount = points.length - sunVertexStart; // Count sun vertices
@@ -164,6 +165,10 @@ window.onload = function init() {
     lastTimestamp = performance.now();
     render();
 };
+
+function flattenScalars(arr) {
+    return new Float32Array(arr);
+}
 
 // Update camera direction vectors based on yaw and pitch
 function updateCameraVectors() {
@@ -315,18 +320,6 @@ function regenerateTerrain(skipSun) {
     currentChunkX = newChunkX;
     currentChunkZ = newChunkZ;
     
-    // Store sun data before clearing
-    let sunData = null;
-    if (sunCreated && sunVertexCount > 0) {
-        // Extract sun vertices, colors, normals, emissive from current arrays
-        sunData = {
-            points: points.slice(sunVertexStart, sunVertexStart + sunVertexCount),
-            colors: colors.slice(sunVertexStart, sunVertexStart + sunVertexCount),
-            normals: normals.slice(sunVertexStart, sunVertexStart + sunVertexCount),
-            emissive: emissive.slice(sunVertexStart, sunVertexStart + sunVertexCount)
-        };
-    }
-    
     // Clear everything
     points = [];
     colors = [];
@@ -340,18 +333,9 @@ function regenerateTerrain(skipSun) {
         }
     }
     
-    // Restore sun at the end of the arrays if it existed
-    if (sunData) {
-        // Append sun data back
-        points.push(...sunData.points);
-        colors.push(...sunData.colors);
-        normals.push(...sunData.normals);
-        emissive.push(...sunData.emissive);
-        
-        // Update sun start position
-        sunVertexStart = points.length - sunVertexCount;
-    } else if (sunCreated && !skipSun) {
-        // If sun was created but we didn't save it (first time), add it
+    // Always rebuild sun at current camera position
+    if (sunCreated && !skipSun || sunCreated) {
+        sunPos = [camera.position[0], 7.5, camera.position[2]];
         sunVertexStart = points.length;
         createSun(sunPos[0], sunPos[1], sunPos[2], 0.7);
         sunVertexCount = points.length - sunVertexStart;
@@ -564,7 +548,7 @@ function sendToGPU() {
     
     let eBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, eBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, flatten(emissive), gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, flattenScalars(emissive), gl.STATIC_DRAW);
     
     let vEmissive = gl.getAttribLocation(program, "vEmissive");
     gl.vertexAttribPointer(vEmissive, 1, gl.FLOAT, false, 0, 0);
@@ -583,6 +567,8 @@ function render() {
     let now = performance.now();
     let deltaTime = Math.min(0.033, (now - lastTimestamp) / 1000);
     lastTimestamp = now;
+    // Keep sun and light locked to player position every frame
+    sunPos = [camera.position[0], 40, camera.position[2]];
     
     // Update movement based on pressed keys
     updateMovement(deltaTime);
