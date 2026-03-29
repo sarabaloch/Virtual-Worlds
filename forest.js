@@ -37,11 +37,6 @@ let currentChunkZ = null;
 
 // Light: sun directly above (90 degrees elevation).
 var lightDir = normalize([0.0, 1.0, 0.0]);
-var sunPos = [camera.position[0], 7.5, camera.position[2]];
-let sunCreated = false;
-let sunVertexStart = 0; // Track where sun vertices start
-let sunVertexCount = 0; // Track how many vertices the sun uses
-
 var program;
 var lastTimestamp = 0;
 
@@ -62,16 +57,6 @@ window.onload = function init() {
     // Generate initial terrain
     regenerateTerrain(false); // false = don't add sun yet
 
-    // Create sun ONCE at initialization, keep it permanently
-    if (!sunCreated) {
-        // Keep sun centered above player
-        sunPos = [camera.position[0], 7.5, camera.position[2]];
-        sunVertexStart = points.length; // Record where sun starts
-        createSun(sunPos[0], sunPos[1], sunPos[2], 0.7);
-        sunVertexCount = points.length - sunVertexStart; // Count sun vertices
-        sunCreated = true;
-        sendToGPU();
-    }
 
     // Setup keyboard event listeners
     window.addEventListener('keydown', function(event) {
@@ -321,14 +306,6 @@ function regenerateTerrain(skipSun) {
         }
     }
     
-    // Always rebuild sun at current camera position
-    if (sunCreated && !skipSun || sunCreated) {
-        sunPos = [camera.position[0], 7.5, camera.position[2]];
-        sunVertexStart = points.length;
-        createSun(sunPos[0], sunPos[1], sunPos[2], 0.7);
-        sunVertexCount = points.length - sunVertexStart;
-    }
-    
     sendToGPU();
 }
 
@@ -485,91 +462,6 @@ function createTreeShadow(x, y, z, radius) {
     }
 }
 
-function createSun(cx, cy, cz, radius) {
-    let latSteps = 8;
-    let lonSteps = 12;
-    let sunColor = [1.0, 0.92, 0.55];
-    let haloColor = [1.0, 0.75, 0.35];
-    
-    for (let lat = 0; lat < latSteps; lat++) {
-        let t0 = (lat / latSteps) * Math.PI;
-        let t1 = ((lat + 1) / latSteps) * Math.PI;
-        
-        for (let lon = 0; lon < lonSteps; lon++) {
-            let p0 = (lon / lonSteps) * 2.0 * Math.PI;
-            let p1 = ((lon + 1) / lonSteps) * 2.0 * Math.PI;
-            
-            let a = [
-                cx + radius * Math.sin(t0) * Math.cos(p0),
-                cy + radius * Math.cos(t0),
-                cz + radius * Math.sin(t0) * Math.sin(p0)
-            ];
-            let b = [
-                cx + radius * Math.sin(t1) * Math.cos(p0),
-                cy + radius * Math.cos(t1),
-                cz + radius * Math.sin(t1) * Math.sin(p0)
-            ];
-            let c = [
-                cx + radius * Math.sin(t1) * Math.cos(p1),
-                cy + radius * Math.cos(t1),
-                cz + radius * Math.sin(t1) * Math.sin(p1)
-            ];
-            let d = [
-                cx + radius * Math.sin(t0) * Math.cos(p1),
-                cy + radius * Math.cos(t0),
-                cz + radius * Math.sin(t0) * Math.sin(p1)
-            ];
-            
-            pushTri(a, b, c, computeNormal(a, b, c), sunColor, 1.0);
-            pushTri(a, c, d, computeNormal(a, c, d), sunColor, 1.0);
-            
-            // Outer shell for visible glow/aura
-            let g = 2.8;
-            let ag = [cx + (a[0] - cx) * g, cy + (a[1] - cy) * g, cz + (a[2] - cz) * g];
-            let bg = [cx + (b[0] - cx) * g, cy + (b[1] - cy) * g, cz + (b[2] - cz) * g];
-            let cg = [cx + (c[0] - cx) * g, cy + (c[1] - cy) * g, cz + (c[2] - cz) * g];
-            let dg = [cx + (d[0] - cx) * g, cy + (d[1] - cy) * g, cz + (d[2] - cz) * g];
-            
-            pushTri(ag, bg, cg, computeNormal(ag, bg, cg), haloColor, 0.35);
-            pushTri(ag, cg, dg, computeNormal(ag, cg, dg), haloColor, 0.35);
-        }
-    }
-    createSunRays(cx, cy, cz, radius * 1.2, radius * 5.0, 18);
-}
-
-function createSunRays(cx, cy, cz, innerR, outerR, rayCount) {
-    let rayColor = [1.0, 0.82, 0.32];
-    
-    for (let i = 0; i < rayCount; i++) {
-        let a0 = (i / rayCount) * Math.PI * 2.0;
-        let a1 = ((i + 0.42) / rayCount) * Math.PI * 2.0;
-        
-        let yTilt0 = 0.15 * Math.sin(i * 2.4);
-        let yTilt1 = 0.15 * Math.cos(i * 2.1);
-        
-        let inner = [
-            cx + Math.cos(a0) * innerR,
-            cy + yTilt0 * innerR,
-            cz + Math.sin(a0) * innerR
-        ];
-        
-        let outerA = [
-            cx + Math.cos(a0) * outerR,
-            cy + yTilt0 * outerR,
-            cz + Math.sin(a0) * outerR
-        ];
-        
-        let outerB = [
-            cx + Math.cos(a1) * (outerR * 0.72),
-            cy + yTilt1 * (outerR * 0.72),
-            cz + Math.sin(a1) * (outerR * 0.72)
-        ];
-        
-        let n = computeNormal(inner, outerA, outerB);
-        pushTri(inner, outerA, outerB, n, rayColor, 0.22);
-    }
-}
-
 // ================= GPU =================
 function sendToGPU() {
     let cBuffer = gl.createBuffer();
@@ -607,8 +499,6 @@ function sendToGPU() {
     let lightLoc = gl.getUniformLocation(program, "lightDir");
     if (lightLoc) gl.uniform3fv(lightLoc, flatten(lightDir));
     
-    let sunLoc = gl.getUniformLocation(program, "sunPos");
-    if (sunLoc) gl.uniform3fv(sunLoc, flatten(sunPos));
 }
 
 // ================= LIGHTING PRESETS =================
@@ -725,7 +615,6 @@ function render() {
     camera.pitch = Math.max(-89, Math.min(89, camera.pitch));
 
     updateCameraVectors();
-    sunPos = [camera.position[0], 40, camera.position[2]];
     
     // Update movement based on pressed keys
     updateMovement(deltaTime);
@@ -751,8 +640,6 @@ function render() {
     
     applyLightingUniforms();
     gl.uniform1f(gl.getUniformLocation(program, "fogDensity"), 0.12);
-    let sunLoc = gl.getUniformLocation(program, "sunPos");
-    if (sunLoc) gl.uniform3fv(sunLoc, flatten(sunPos));
     
     gl.drawArrays(gl.TRIANGLES, 0, points.length);
     
