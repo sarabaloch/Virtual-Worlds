@@ -47,7 +47,18 @@
 
         uniform float fogDensity;
 
-        // Hash noise for dappled sunlight patches
+        // Lighting uniforms — set by JS presets
+        uniform vec3  uLightDir;
+        uniform vec3  uSunTintHigh;   // full-lit band tint
+        uniform vec3  uSunTintMid;    // mid band tint
+        uniform vec3  uSunTintShadow; // shadow band tint
+        uniform vec3  uAmbientColor;
+        uniform vec3  uFogColor;
+        uniform float uFogA;          // fog exponent coefficients
+        uniform float uFogB;
+        uniform float uDarkness;      // overall scene brightness multiplier
+        uniform float uShadowDepth;   // how dark the shadow band gets
+
         float hash(vec2 p) {
             return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
         }
@@ -63,61 +74,43 @@
         }
 
         void main() {
-            // Sun low from the side — rakes across tree trunks and cone faces dramatically
-            vec3 L = normalize(vec3(0.2, 1.0, -1.8));
+            vec3 L       = normalize(uLightDir);
             vec3 Nworld  = normalize(fWorldNormal);
-            vec3 Nview   = normalize(fViewNormal);
             float NdL    = dot(Nworld, L);
 
-            // === DAPPLED SUNLIGHT PATCHES ON GROUND ===
             float dapple = smoothNoise(fWorldPos.xz * 0.8) * 0.6
                          + smoothNoise(fWorldPos.xz * 2.1) * 0.4;
             dapple = smoothstep(0.38, 0.72, dapple);
-
             float litNdL = NdL + dapple * 0.35 * step(0.0, NdL);
 
-            // === CEL BANDS — wider contrast between light and shadow ===
             float diffuse;
             vec3  sunTint;
             if (litNdL > 0.6) {
                 diffuse = 1.0;
-                sunTint = vec3(1.28, 1.15, 0.82); // warm golden sun
+                sunTint = uSunTintHigh;
             } else if (litNdL > 0.05) {
                 diffuse = 0.62;
-                sunTint = vec3(0.95, 0.98, 0.88);
+                sunTint = uSunTintMid;
             } else {
-                diffuse = 0.32;                    // shadows are actually dark now
-                sunTint = vec3(0.55, 0.72, 1.0);  // cool blue-purple shadow
+                diffuse = uShadowDepth;
+                sunTint = uSunTintShadow;
             }
 
-            // Ambient — lower so shadows read clearly
-            vec3 ambient = fColor * vec3(0.38, 0.52, 0.62) * 0.4;
-
-            vec3 color = fColor * sunTint * diffuse;
+            vec3 ambient = fColor * uAmbientColor * 0.4;
+            vec3 color   = fColor * sunTint * diffuse;
 
             float shadowMask = 1.0 - smoothstep(-0.05, 0.25, NdL);
             color = mix(color, color + ambient, shadowMask * 0.5);
+            color *= uDarkness;
 
-            // === SPECULAR ===
-            vec3 V = normalize(-fPosition);
-            vec3 R = reflect(-L, Nview);
-            float specRaw = pow(max(dot(V, R), 0.0), 24.0) * step(0.0, NdL);
-            float spec    = step(0.55, specRaw) * 0.35;
-            color += vec3(1.0, 0.97, 0.75) * spec;
-
-            // === EMISSIVE ===
             if (fEmissive > 0.01) {
-                color = fColor * 2.2;
+                color = fColor * 2.2 * uDarkness;
             }
 
-            // === VOLUMETRIC MIST — exponential-squared for sharp near/far separation ===
             float dist      = length(fPosition);
-            // exp2 fog falls off much faster = close trees vivid, far trees swallowed by mist
-            float fogFactor = exp(-0.055 * dist * dist * 0.08 - 0.04 * dist);
+            float fogFactor = exp(-uFogA * dist * dist - uFogB * dist);
             fogFactor       = clamp(fogFactor, 0.0, 1.0);
-            // Cool blue-grey mist — contrasts with warm sunlit greens
-            vec3 mistColor  = vec3(0.62, 0.74, 0.82);
-            color = mix(mistColor, color, fogFactor);
+            color = mix(uFogColor, color, fogFactor);
 
             gl_FragColor = vec4(color, 1.0);
         }
@@ -135,9 +128,43 @@
 
     <div style="color: white; font-family: sans-serif; text-align: center; margin-top: 10px;">
         <h3>Hidden Forest - Project 1</h3>
-        <p><b>WASD:</b> Move around the terrain</p>
-        <p><b>Arrow Keys:</b> Look around (Pitch & Yaw)</p>
-        <p><i>Mode: Cel Shading</i></p>
+        <p><b>WASD:</b> Move around the terrain &nbsp;|&nbsp; <b>Arrow Keys:</b> Look around</p>
+    </div>
+
+    <style>
+        .preset-btn {
+            padding: 8px 18px;
+            margin: 4px;
+            border: 2px solid rgba(255,255,255,0.25);
+            border-radius: 20px;
+            background: rgba(255,255,255,0.08);
+            color: #ddd;
+            font-family: sans-serif;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 0.5px;
+        }
+        .preset-btn:hover {
+            background: rgba(255,255,255,0.18);
+            border-color: rgba(255,255,255,0.5);
+            color: #fff;
+        }
+        .preset-btn.active {
+            background: rgba(255,255,255,0.28);
+            border-color: #fff;
+            color: #fff;
+            font-weight: bold;
+        }
+    </style>
+
+    <div style="margin-top: 12px; display: flex; flex-wrap: wrap; justify-content: center; max-width: 600px;">
+        <button class="preset-btn active" id="btn-daytime"    onclick="setPreset('daytime')">☀️ Daytime</button>
+        <button class="preset-btn"        id="btn-goldenHour" onclick="setPreset('goldenHour')">🌇 Golden Hour</button>
+        <button class="preset-btn"        id="btn-sunrise"    onclick="setPreset('sunrise')">🌅 Sunrise</button>
+        <button class="preset-btn"        id="btn-sunset"     onclick="setPreset('sunset')">🌆 Sunset</button>
+        <button class="preset-btn"        id="btn-blueHour"   onclick="setPreset('blueHour')">🌃 Blue Hour</button>
+        <button class="preset-btn"        id="btn-nighttime"  onclick="setPreset('nighttime')">🌙 Nighttime</button>
     </div>
 </body>
 </html>

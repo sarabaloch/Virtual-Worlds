@@ -611,7 +611,103 @@ function sendToGPU() {
     if (sunLoc) gl.uniform3fv(sunLoc, flatten(sunPos));
 }
 
-// ================= RENDER =================
+// ================= LIGHTING PRESETS =================
+var lightingPresets = {
+    daytime: {
+        lightDir:     [0.2,  1.0, -1.8],
+        sunTintHigh:  [1.28, 1.15, 0.82],
+        sunTintMid:   [0.95, 0.98, 0.88],
+        sunTintShadow:[0.55, 0.72, 1.0],
+        ambientColor: [0.38, 0.52, 0.62],
+        fogColor:     [0.62, 0.74, 0.82],
+        fogA: 0.004, fogB: 0.04,
+        darkness: 1.0, shadowDepth: 0.32,
+        skyColor:     [0.55, 0.75, 0.95]
+    },
+    goldenHour: {
+        lightDir:     [1.6,  0.3, -1.0],
+        sunTintHigh:  [1.5,  1.1,  0.55],
+        sunTintMid:   [1.2,  0.85, 0.45],
+        sunTintShadow:[0.35, 0.30, 0.55],
+        ambientColor: [0.6,  0.35, 0.20],
+        fogColor:     [0.90, 0.60, 0.30],
+        fogA: 0.006, fogB: 0.06,
+        darkness: 1.0, shadowDepth: 0.25,
+        skyColor:     [0.95, 0.65, 0.25]
+    },
+    blueHour: {
+        lightDir:     [0.3,  0.15,-1.2],
+        sunTintHigh:  [0.65, 0.75, 1.10],
+        sunTintMid:   [0.50, 0.60, 0.95],
+        sunTintShadow:[0.25, 0.30, 0.65],
+        ambientColor: [0.30, 0.38, 0.70],
+        fogColor:     [0.30, 0.38, 0.65],
+        fogA: 0.007, fogB: 0.07,
+        darkness: 0.75, shadowDepth: 0.20,
+        skyColor:     [0.18, 0.22, 0.52]
+    },
+    sunrise: {
+        lightDir:     [-1.8, 0.25,-0.4],
+        sunTintHigh:  [1.55, 0.95, 0.55],
+        sunTintMid:   [1.1,  0.70, 0.45],
+        sunTintShadow:[0.30, 0.28, 0.55],
+        ambientColor: [0.55, 0.32, 0.22],
+        fogColor:     [1.0,  0.72, 0.50],
+        fogA: 0.008, fogB: 0.07,
+        darkness: 0.90, shadowDepth: 0.22,
+        skyColor:     [1.0,  0.60, 0.30]
+    },
+    sunset: {
+        lightDir:     [1.8,  0.18, 0.5],
+        sunTintHigh:  [1.6,  0.80, 0.35],
+        sunTintMid:   [1.2,  0.60, 0.30],
+        sunTintShadow:[0.28, 0.22, 0.50],
+        ambientColor: [0.55, 0.28, 0.18],
+        fogColor:     [0.95, 0.50, 0.25],
+        fogA: 0.009, fogB: 0.08,
+        darkness: 0.88, shadowDepth: 0.20,
+        skyColor:     [0.90, 0.40, 0.15]
+    },
+    nighttime: {
+        lightDir:     [0.2,  1.0, -0.5],
+        sunTintHigh:  [0.30, 0.35, 0.60],
+        sunTintMid:   [0.18, 0.22, 0.45],
+        sunTintShadow:[0.08, 0.10, 0.25],
+        ambientColor: [0.15, 0.18, 0.40],
+        fogColor:     [0.04, 0.05, 0.15],
+        fogA: 0.01,  fogB: 0.09,
+        darkness: 0.38, shadowDepth: 0.10,
+        skyColor:     [0.03, 0.04, 0.12]
+    }
+};
+
+var currentPreset = lightingPresets.daytime;
+
+function setPreset(name) {
+    currentPreset = lightingPresets[name];
+    let sc = currentPreset.skyColor;
+    gl.clearColor(sc[0], sc[1], sc[2], 1.0);
+
+    // Update active button style
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    let btn = document.getElementById('btn-' + name);
+    if (btn) btn.classList.add('active');
+}
+
+function applyLightingUniforms() {
+    let p = currentPreset;
+    let u = (name) => gl.getUniformLocation(program, name);
+    gl.uniform3fv(u('uLightDir'),      new Float32Array(p.lightDir));
+    gl.uniform3fv(u('uSunTintHigh'),   new Float32Array(p.sunTintHigh));
+    gl.uniform3fv(u('uSunTintMid'),    new Float32Array(p.sunTintMid));
+    gl.uniform3fv(u('uSunTintShadow'), new Float32Array(p.sunTintShadow));
+    gl.uniform3fv(u('uAmbientColor'),  new Float32Array(p.ambientColor));
+    gl.uniform3fv(u('uFogColor'),      new Float32Array(p.fogColor));
+    gl.uniform1f(u('uFogA'),           p.fogA);
+    gl.uniform1f(u('uFogB'),           p.fogB);
+    gl.uniform1f(u('uDarkness'),       p.darkness);
+    gl.uniform1f(u('uShadowDepth'),    p.shadowDepth);
+}
 
 function render() {
     let now = performance.now();
@@ -653,6 +749,7 @@ function render() {
     gl.uniformMatrix4fv(gl.getUniformLocation(program, "modelViewMatrix"), false, flatten(mv));
     gl.uniformMatrix4fv(gl.getUniformLocation(program, "projectionMatrix"), false, flatten(p));
     
+    applyLightingUniforms();
     gl.uniform1f(gl.getUniformLocation(program, "fogDensity"), 0.12);
     let sunLoc = gl.getUniformLocation(program, "sunPos");
     if (sunLoc) gl.uniform3fv(sunLoc, flatten(sunPos));
