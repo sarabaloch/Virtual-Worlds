@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title>Hidden Forest - Project 1</title>
-    
+
     <script id="vertex-shader" type="x-shader/x-vertex">
         attribute vec4 vPosition;
         attribute vec3 vColor;
@@ -14,19 +14,20 @@
         uniform mat4 projectionMatrix;
 
         varying vec3 fColor;
-        varying vec3 fNormal;
+        varying vec3 fViewNormal;
+        varying vec3 fWorldNormal;
         varying vec3 fPosition;
-        varying vec3 fLightDir;
+        varying vec3 fWorldPos; // Pass world position for noise
         varying float fEmissive;
+        varying float fHeight;
 
         void main() {
             vec4 pos = modelViewMatrix * vPosition;
             fPosition = pos.xyz;
-            fNormal = normalize(mat3(modelViewMatrix) * vNormal);
-
-            // Fixed world-space direction — NOT rotated with camera
-            fLightDir = normalize(vec3(0.4, 1.0, 0.3));
-
+            fWorldPos = vPosition.xyz; 
+            fHeight = vPosition.y; 
+            fViewNormal = normalize(mat3(modelViewMatrix) * vNormal);
+            fWorldNormal = normalize(vNormal);
             fColor = vColor;
             fEmissive = vEmissive;
             gl_Position = projectionMatrix * pos;
@@ -37,58 +38,88 @@
         precision mediump float;
 
         varying vec3 fColor;
-        varying vec3 fNormal;
+        varying vec3 fViewNormal;
+        varying vec3 fWorldNormal;
         varying vec3 fPosition;
-        varying vec3 fLightDir;
+        varying vec3 fWorldPos;
         varying float fEmissive;
+        varying float fHeight;
 
         uniform float fogDensity;
 
+        // Hash noise for dappled sunlight patches
+        float hash(vec2 p) {
+            return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+        }
+        float smoothNoise(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            float a = hash(i);
+            float b = hash(i + vec2(1.0, 0.0));
+            float c = hash(i + vec2(0.0, 1.0));
+            float d = hash(i + vec2(1.0, 1.0));
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+        }
+
         void main() {
-            vec3 N = normalize(fNormal);
-            vec3 V = normalize(-fPosition);
-            vec3 L = fLightDir;
-            vec3 R = reflect(-L, N);
-            float alpha = 1.0;
+            // Sun low from the side — rakes across tree trunks and cone faces dramatically
+            vec3 L = normalize(vec3(0.2, 1.0, -1.8));
+            vec3 Nworld  = normalize(fWorldNormal);
+            vec3 Nview   = normalize(fViewNormal);
+            float NdL    = dot(Nworld, L);
 
-            float ndl = max(dot(N, L), 0.0);
+            // === DAPPLED SUNLIGHT PATCHES ON GROUND ===
+            float dapple = smoothNoise(fWorldPos.xz * 0.8) * 0.6
+                         + smoothNoise(fWorldPos.xz * 2.1) * 0.4;
+            dapple = smoothstep(0.38, 0.72, dapple);
 
-            // Bright ambient so nothing goes fully dark
-            float ambient = 0.35 + 0.10 * clamp(N.y, 0.0, 1.0);
+            float litNdL = NdL + dapple * 0.35 * step(0.0, NdL);
 
-            // Strong diffuse with warm sun tint
-            vec3 sunColor = vec3(1.10, 0.95, 0.75);
-            float diffuse = ndl * 1.1;
-
-            vec3 color = fColor * ambient + fColor * sunColor * diffuse;
-
-            // Warm specular highlight
-            float spec = pow(max(dot(V, R), 0.0), 24.0) * 0.18 * step(0.0, ndl);
-            color += vec3(1.0, 0.95, 0.8) * spec;
-
-            // Emissive (sun/halo)
-            if (fEmissive > 0.01) {
-                float ndv = max(dot(N, V), 0.0);
-                float rim = pow(1.0 - ndv, 2.6);
-
-                if (fEmissive > 0.7) {
-                    color = fColor * 1.35 + vec3(0.30,0.20,0.06) * (0.35 + rim * 0.3);
-                    alpha = 1.0;
-                } else {
-                    color = fColor * (1.1 + 2.4 * rim) + vec3(0.55,0.30,0.10) * (0.55 + 1.8 * rim);
-                    alpha = clamp(0.18 + 0.62 * rim, 0.18, 0.85);
-                }
+            // === CEL BANDS — wider contrast between light and shadow ===
+            float diffuse;
+            vec3  sunTint;
+            if (litNdL > 0.6) {
+                diffuse = 1.0;
+                sunTint = vec3(1.28, 1.15, 0.82); // warm golden sun
+            } else if (litNdL > 0.05) {
+                diffuse = 0.62;
+                sunTint = vec3(0.95, 0.98, 0.88);
+            } else {
+                diffuse = 0.32;                    // shadows are actually dark now
+                sunTint = vec3(0.55, 0.72, 1.0);  // cool blue-purple shadow
             }
 
-            // Fog — much less aggressive, only kicks in at distance
-            float dist = length(fPosition);
-            float fog = exp(-fogDensity * dist * 0.4);  // 0.4 = pull fog way back
-            vec3 sky = vec3(0.55, 0.75, 0.95);
-            float fogFactor = mix(fog, 1.0, clamp(fEmissive * 0.85, 0.0, 1.0));
-            // Don't force a minimum fog — let nearby colors stay pure
-            color = mix(sky, color, clamp(fogFactor, 0.0, 1.0));
+            // Ambient — lower so shadows read clearly
+            vec3 ambient = fColor * vec3(0.38, 0.52, 0.62) * 0.4;
 
-            gl_FragColor = vec4(color, alpha);
+            vec3 color = fColor * sunTint * diffuse;
+
+            float shadowMask = 1.0 - smoothstep(-0.05, 0.25, NdL);
+            color = mix(color, color + ambient, shadowMask * 0.5);
+
+            // === SPECULAR ===
+            vec3 V = normalize(-fPosition);
+            vec3 R = reflect(-L, Nview);
+            float specRaw = pow(max(dot(V, R), 0.0), 24.0) * step(0.0, NdL);
+            float spec    = step(0.55, specRaw) * 0.35;
+            color += vec3(1.0, 0.97, 0.75) * spec;
+
+            // === EMISSIVE ===
+            if (fEmissive > 0.01) {
+                color = fColor * 2.2;
+            }
+
+            // === VOLUMETRIC MIST — exponential-squared for sharp near/far separation ===
+            float dist      = length(fPosition);
+            // exp2 fog falls off much faster = close trees vivid, far trees swallowed by mist
+            float fogFactor = exp(-0.055 * dist * dist * 0.08 - 0.04 * dist);
+            fogFactor       = clamp(fogFactor, 0.0, 1.0);
+            // Cool blue-grey mist — contrasts with warm sunlit greens
+            vec3 mistColor  = vec3(0.62, 0.74, 0.82);
+            color = mix(mistColor, color, fogFactor);
+
+            gl_FragColor = vec4(color, 1.0);
         }
     </script>
 
@@ -101,12 +132,12 @@
     <canvas id="gl-canvas" width="800" height="600" style="border: 1px solid #334444; margin-top: 20px;">
         WebGL Error
     </canvas>
-    
+
     <div style="color: white; font-family: sans-serif; text-align: center; margin-top: 10px;">
         <h3>Hidden Forest - Project 1</h3>
         <p><b>WASD:</b> Move around the terrain</p>
         <p><b>Arrow Keys:</b> Look around (Pitch & Yaw)</p>
-        <p><i>Mode: Smooth Shading</i></p>
+        <p><i>Mode: Cel Shading</i></p>
     </div>
 </body>
 </html>

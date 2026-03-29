@@ -8,7 +8,7 @@ var emissive = [];
 
 // Camera system for WASD + mouse look
 var camera = {
-    position: [0.0, 1.5, 5.0],
+    position: [0.0, 0.2, 5.0],
     yaw: -90.0,   // horizontal angle (degrees)
     pitch: 0.0,   // vertical angle (degrees)
     forward: [0, 0, -1],
@@ -18,7 +18,9 @@ var camera = {
 
 // Movement state
 var keys = {
-    w: false, s: false, a: false, d: false, arrowUp: false, arrowDown: false
+    w: false, s: false, a: false, d: false,
+    arrowUp: false, arrowDown: false, arrowLeft: false, arrowRight: false,
+    space: false, ctrl: false
 };
 
 const MOVE_SPEED = 5.0;      // units per second
@@ -81,30 +83,15 @@ window.onload = function init() {
         if (key === 'a') keys.a = true;
         if (key === 'd') keys.d = true;
         
-        // Arrow keys for vertical movement (up/down)
-        if (key === 'arrowup') {
-            keys.arrowUp = true;
-            event.preventDefault();
-        }
-        if (key === 'arrowdown') {
-            keys.arrowDown = true;
-            event.preventDefault();
-        }
-        
-        // Space as alternative for up, Ctrl as alternative for down
-        if (key === ' ') {
-            camera.position[1] += 0.2;
-            event.preventDefault();
-        }
-        if (key === 'control') {
-            camera.position[1] -= 0.2;
-            event.preventDefault();
-        }
-        
-        // Prevent default scrolling with arrow keys
-        if (key === 'arrowup' || key === 'arrowdown' || key === ' ' || key === 'control') {
-            event.preventDefault();
-        }
+        // Arrow keys for looking around
+        if (key === 'arrowup')    { keys.arrowUp    = true; event.preventDefault(); }
+        if (key === 'arrowdown')  { keys.arrowDown  = true; event.preventDefault(); }
+        if (key === 'arrowleft')  { keys.arrowLeft  = true; event.preventDefault(); }
+        if (key === 'arrowright') { keys.arrowRight = true; event.preventDefault(); }
+
+        // Vertical movement
+        if (event.code === 'Space')   { keys.space = true;  event.preventDefault(); }
+        if (key === 'control')        { keys.ctrl  = true;  event.preventDefault(); }
     });
     
     window.addEventListener('keyup', function(event) {
@@ -113,8 +100,12 @@ window.onload = function init() {
         if (key === 's') keys.s = false;
         if (key === 'a') keys.a = false;
         if (key === 'd') keys.d = false;
-        if (key === 'arrowup') keys.arrowUp = false;
-        if (key === 'arrowdown') keys.arrowDown = false;
+        if (key === 'arrowup')    keys.arrowUp    = false;
+        if (key === 'arrowdown')  keys.arrowDown  = false;
+        if (key === 'arrowleft')  keys.arrowLeft  = false;
+        if (key === 'arrowright') keys.arrowRight = false;
+        if (event.code === 'Space') keys.space = false;
+        if (key === 'control')      keys.ctrl  = false;
     });
     
     // Mouse look: capture and hide cursor on click
@@ -202,11 +193,10 @@ function updateCameraVectors() {
 
 // Update camera position based on WASD and arrow key input (time-based movement)
 function updateMovement(deltaTime) {
-    var speed = MOVE_SPEED * deltaTime;
-    var verticalSpeed = VERTICAL_SPEED * deltaTime;
+    var speed = (MOVE_SPEED * 0.5) * deltaTime; // Slower movement speed as requested
     var moveDelta = [0, 0, 0];
     
-    // Horizontal movement (WASD)
+    // W = forward, S = backward (relative to look direction, XZ only)
     if (keys.w) {
         moveDelta[0] += camera.forward[0] * speed;
         moveDelta[2] += camera.forward[2] * speed;
@@ -215,22 +205,20 @@ function updateMovement(deltaTime) {
         moveDelta[0] -= camera.forward[0] * speed;
         moveDelta[2] -= camera.forward[2] * speed;
     }
+    // A = strafe right, D = strafe left
     if (keys.a) {
-        moveDelta[0] -= camera.right[0] * speed;
-        moveDelta[2] -= camera.right[2] * speed;
-    }
-    if (keys.d) {
         moveDelta[0] += camera.right[0] * speed;
         moveDelta[2] += camera.right[2] * speed;
     }
-    
-    // Vertical movement (Arrow Up/Down)
-    if (keys.arrowUp) {
-        moveDelta[1] += verticalSpeed;
+    if (keys.d) {
+        moveDelta[0] -= camera.right[0] * speed;
+        moveDelta[2] -= camera.right[2] * speed;
     }
-    if (keys.arrowDown) {
-        moveDelta[1] -= verticalSpeed;
-    }
+
+    // Vertical movement — Space = up, Ctrl = down
+    var vSpeed = VERTICAL_SPEED * deltaTime;
+    if (keys.space) moveDelta[1] += vSpeed;
+    if (keys.ctrl)  moveDelta[1] -= vSpeed;
     
     // Apply movement
     let newX = camera.position[0] + moveDelta[0];
@@ -375,47 +363,109 @@ function createRock(x, y, z) {
         let b = verts[(i+1)%sides];
         let n1 = computeNormal(a,b,top);
         let n2 = computeNormal(b,a,bottom);
-        pushTri(a,b,top,n1,[0.35,0.35,0.35]);
-        pushTri(b,a,bottom,n2,[0.3,0.3,0.3]);
+        pushTri(a,b,top,n1,[0.18,0.18,0.20]);
+        pushTri(b,a,bottom,n2,[0.13,0.13,0.15]);
     }
 }
 
 // ================= TREE =================
 function createTree(cx, cy, cz) {
-    let trunkH = 0.5 + pseudoRandom(cx, cz) * 0.4; //varied height
-    let trunkR = 0.04 + pseudoRandom(cx+1, cz+1) * 0.06; //varied radius
-    
-    let brown = [0.35, 0.22, 0.12];
-    let green = [0.15, 0.55, 0.2];
-    
-    let sides = 10;
+    let rand1 = pseudoRandom(cx, cz);
+    let rand2 = pseudoRandom(cx+1, cz+1);
+    let rand3 = pseudoRandom(cx+2, cz+2);
+    let rand4 = pseudoRandom(cx+3, cz+3);
+    let rand5 = pseudoRandom(cx+4, cz+4);
+
+    let brown = [0.28 + rand3*0.14, 0.16 + rand3*0.10, 0.07 + rand3*0.06];
+    let sides = 8;
+
+    // Pick tree archetype from 3 shapes
+    let archetype = Math.floor(rand5 * 3); // 0=spire, 1=bushy, 2=twisted
+
+    let trunkH, trunkR, layers, baseRadius, coneH, overlap, tipSharpness, radiusCurve;
+
+    if (archetype === 0) {
+        // SPIRE — tall, narrow, many tight layers, sharp tips
+        trunkH      = 0.8 + rand1 * 0.6;
+        trunkR      = 0.035 + rand2 * 0.025;
+        layers      = 6 + Math.floor(rand4 * 3);
+        baseRadius  = 0.22 + rand1 * 0.08;
+        coneH       = 0.22 + rand2 * 0.06;
+        overlap     = 0.10;
+        tipSharpness = 0.70; // radius shrinks fast toward top
+        radiusCurve  = 1.0;  // linear
+    } else if (archetype === 1) {
+        // BUSHY — short, wide, fewer layers that flare outward at the bottom
+        trunkH      = 0.35 + rand1 * 0.25;
+        trunkR      = 0.06 + rand2 * 0.05;
+        layers      = 3 + Math.floor(rand4 * 2);
+        baseRadius  = 0.55 + rand1 * 0.20;
+        coneH       = 0.38 + rand2 * 0.10;
+        overlap     = 0.18;
+        tipSharpness = 0.40; // stays wide all the way up
+        radiusCurve  = 0.7;  // flattened falloff
+    } else {
+        // TWISTED — lopsided, asymmetric offsets per layer, medium height
+        trunkH      = 0.55 + rand1 * 0.45;
+        trunkR      = 0.045 + rand2 * 0.04;
+        layers      = 4 + Math.floor(rand4 * 3);
+        baseRadius  = 0.30 + rand1 * 0.18;
+        coneH       = 0.28 + rand2 * 0.12;
+        overlap     = 0.08;
+        tipSharpness = 0.55;
+        radiusCurve  = 1.0;
+    }
+
+    // Trunk
     for (let i = 0; i < sides; i++) {
-        let a = (i / sides) * Math.PI * 2;
-        let b = ((i + 1) / sides) * Math.PI * 2;
-        let p1 = [cx + Math.cos(a)*trunkR, cy, cz + Math.sin(a)*trunkR];
-        let p2 = [cx + Math.cos(b)*trunkR, cy, cz + Math.sin(b)*trunkR];
-        let p3 = [cx + Math.cos(a)*trunkR, cy + trunkH, cz + Math.sin(a)*trunkR];
-        let p4 = [cx + Math.cos(b)*trunkR, cy + trunkH, cz + Math.sin(b)*trunkR];
-        
+        let a  = (i / sides) * Math.PI * 2;
+        let b  = ((i+1) / sides) * Math.PI * 2;
+        let p1 = [cx + Math.cos(a)*trunkR,       cy,          cz + Math.sin(a)*trunkR];
+        let p2 = [cx + Math.cos(b)*trunkR,       cy,          cz + Math.sin(b)*trunkR];
+        let p3 = [cx + Math.cos(a)*trunkR*0.7,   cy + trunkH, cz + Math.sin(a)*trunkR*0.7];
+        let p4 = [cx + Math.cos(b)*trunkR*0.7,   cy + trunkH, cz + Math.sin(b)*trunkR*0.7];
         pushTri(p1, p2, p3, computeNormal(p1,p2,p3), brown);
         pushTri(p2, p4, p3, computeNormal(p2,p4,p3), brown);
     }
-    
-    let layers = 3 + Math.floor(pseudoRandom(cx+2, cz+2)*2);
+
+    // Canopy layers
     for (let l = 0; l < layers; l++) {
-        let y = cy + trunkH + l * 0.18;
-        let r = 0.35 - l * 0.08;
+        let t       = l / (layers - 1);
+        let layerY  = cy + trunkH + l * (coneH - overlap);
+        let r       = baseRadius * (1.0 - Math.pow(t, radiusCurve) * tipSharpness);
+        let tipY    = layerY + coneH;
+
+        // Twisted trees: offset each layer's tip slightly for a leaning look
+        let offX = 0, offZ = 0;
+        if (archetype === 2) {
+            offX = pseudoRandom(cx + l*7.3, cz + l*2.1) * 0.12 - 0.06;
+            offZ = pseudoRandom(cx + l*3.7, cz + l*8.9) * 0.12 - 0.06;
+        }
+        let tip = [cx + offX, tipY, cz + offZ];
+
+        let brightness  = 0.76 + t * 0.24;
+        let greenShift  = rand3 * 0.10;
+        // Bushy trees lean more yellow-green, spires more blue-green
+        let blueShift   = (archetype === 0) ? 0.06 : 0.0;
+        let layerColor  = [
+            (0.09 + greenShift) * brightness,
+            (0.46 + rand1*0.13) * brightness,
+            (0.13 + greenShift + blueShift) * brightness
+        ];
+        let underColor  = [layerColor[0]*0.48, layerColor[1]*0.50, layerColor[2]*0.48];
+
         for (let i = 0; i < sides; i++) {
-            let a = (i / sides) * Math.PI * 2;
-            let b = ((i + 1) / sides) * Math.PI * 2;
-            let p1 = [cx + Math.cos(a)*r, y, cz + Math.sin(a)*r];
-            let p2 = [cx + Math.cos(b)*r, y, cz + Math.sin(b)*r];
-            let tip = [cx, y + 0.25, cz];
-            pushTri(p1,p2,tip,computeNormal(p1,p2,tip),green);
+            let a  = (i / sides) * Math.PI * 2;
+            let b  = ((i+1) / sides) * Math.PI * 2;
+            let p1 = [cx + Math.cos(a)*r, layerY, cz + Math.sin(a)*r];
+            let p2 = [cx + Math.cos(b)*r, layerY, cz + Math.sin(b)*r];
+            pushTri(p1, p2, tip, computeNormal(p1, p2, tip), layerColor);
+            let center = [cx, layerY, cz];
+            pushTri(p2, p1, center, computeNormal(p2, p1, center), underColor);
         }
     }
-    
-    createTreeShadow(cx, cy, cz, 0.30);
+
+    createTreeShadow(cx, cy, cz, baseRadius * 0.85);
 }
 
 function createTreeShadow(x, y, z, radius) {
@@ -567,7 +617,18 @@ function render() {
     let now = performance.now();
     let deltaTime = Math.min(0.033, (now - lastTimestamp) / 1000);
     lastTimestamp = now;
-    // Keep sun and light locked to player position every frame
+
+    // Arrow keys: look up/down (pitch) and look left/right (yaw)
+    const rotationSpeed = 50.0 * deltaTime; // Degrees per second
+    if (keys.arrowUp)    camera.pitch += rotationSpeed;
+    if (keys.arrowDown)  camera.pitch -= rotationSpeed;
+    if (keys.arrowLeft)  camera.yaw   -= rotationSpeed;
+    if (keys.arrowRight) camera.yaw   += rotationSpeed;
+
+    // Keep pitch clamped
+    camera.pitch = Math.max(-89, Math.min(89, camera.pitch));
+
+    updateCameraVectors();
     sunPos = [camera.position[0], 40, camera.position[2]];
     
     // Update movement based on pressed keys
