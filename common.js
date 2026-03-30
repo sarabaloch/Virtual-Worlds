@@ -257,3 +257,19 @@ function computeNormal(a, b, c) {
         u[0]*v[1] - u[1]*v[0]
     ]);
 }
+
+function getNormal(x, z) {
+    let eps = 0.01;
+
+    let hL = getHeight(x - eps, z);
+    let hR = getHeight(x + eps, z);
+    let hD = getHeight(x, z - eps);
+    let hU = getHeight(x, z + eps);
+
+    let nx = hL - hR;
+    let ny = 2.0;
+    let nz = hD - hU;
+
+    let len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+    return [nx/len, ny/len, nz/len];
+}

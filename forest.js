@@ -7,6 +7,11 @@ var colors = [];
 var normals = [];
 var emissive = [];
 
+//buffers
+var vBuffer, cBuffer, nBuffer, eBuffer;
+var wBuffer;
+var vPosition, vColor, vNormal, vEmissive;
+
 // camera state
 var camera = {
     position: [0.0, 0.2, 5.0], // start slightly above ground to avoid immediate collision
@@ -33,6 +38,11 @@ let currentChunkZ = null;
 
 var program; 
 var lastTimestamp = 0; // for tracking time between frames
+
+//fir switching between shading modes
+var shadingMode = 2;
+var wirePoints = []; 
+// 0 = wireframe, 1 = flat, 2 = smooth (default)
 
 // precompute a few lighting presets for different times of day
 window.onload = function init() { // initialize WebGL context, set up event listeners, and start render loop
@@ -205,8 +215,13 @@ function generateTerrain(chunkX, chunkZ) {
                 0.10 + shade * 0.2
             ];
             
-            pushTri(a, b, c, n1, baseColor);
-            pushTri(b, d, c, n2, baseColor);
+            if (shadingMode === 2) {
+                pushTriSmooth(a, b, c, baseColor);
+                pushTriSmooth(b, d, c, baseColor);
+            } else {
+                pushTri(a, b, c, n1, baseColor);
+                pushTri(b, d, c, n2, baseColor);
+            }
             
             let r = pseudoRandom(x, z);
             
@@ -240,6 +255,7 @@ function regenerateTerrain(skipSun) {
     colors = [];
     normals = [];
     emissive = [];
+    wirePoints = [];
     
     for (let dx = -2; dx <= 2; dx++) {
         for (let dz = -2; dz <= 2; dz++) {
@@ -252,11 +268,30 @@ function regenerateTerrain(skipSun) {
 
 function pushTri(a, b, c, n, col, emitStrength) {
     let e = (emitStrength === undefined) ? 0.0 : emitStrength;
+
+    // triangles
     points.push(a, b, c);
     normals.push(n, n, n);
     colors.push(col, col, col);
     emissive.push(e, e, e);
+
+    // edges (wireframe)
+    wirePoints.push(a, b, b, c, c, a);
 }
+
+function pushTriSmooth(a, b, c, col) {
+    points.push(a, b, c);
+
+    normals.push(
+        getNormal(a[0], a[2]),
+        getNormal(b[0], b[2]),
+        getNormal(c[0], c[2])
+    );
+
+    colors.push(col, col, col);
+    emissive.push(0, 0, 0);
+}
+
 
 function createRock(x, y, z) {
     let size = 0.08 + pseudoRandom(x, z) * 0.18;
@@ -431,38 +466,43 @@ function createCloudPuff(x, y, z, size) {
 }
 
 function sendToGPU() {
-    let cBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, flatten(colors), gl.STATIC_DRAW);
-    
-    let vColor = gl.getAttribLocation(program, "vColor");
-    gl.vertexAttribPointer(vColor, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(vColor);
-    
-    let vBuffer = gl.createBuffer();
+    vPosition = gl.getAttribLocation(program, "vPosition");
+    vColor    = gl.getAttribLocation(program, "vColor");
+    vNormal   = gl.getAttribLocation(program, "vNormal");
+    vEmissive = gl.getAttribLocation(program, "vEmissive");
+
+    // positions
+    vBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, flatten(points), gl.STATIC_DRAW);
-    
-    let vPosition = gl.getAttribLocation(program, "vPosition");
     gl.vertexAttribPointer(vPosition, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(vPosition);
-    
-    let nBuffer = gl.createBuffer();
+
+    // colors
+    cBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(colors), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(vColor, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(vColor);
+
+    // normals
+    nBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, nBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, flatten(normals), gl.STATIC_DRAW);
-    
-    let vNormal = gl.getAttribLocation(program, "vNormal");
     gl.vertexAttribPointer(vNormal, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(vNormal);
-    
-    let eBuffer = gl.createBuffer();
+
+    // emissive
+    eBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, eBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, flattenScalars(emissive), gl.STATIC_DRAW);
-    
-    let vEmissive = gl.getAttribLocation(program, "vEmissive");
     gl.vertexAttribPointer(vEmissive, 1, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(vEmissive);
-    
+
+    // wireframe
+    wBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, wBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(wirePoints), gl.STATIC_DRAW);
 }
 
 var lightingPresets = {
@@ -546,6 +586,13 @@ function setPreset(name) {
     if (btn) btn.classList.add('active');
 }
 
+function setShading(mode) {
+    shadingMode = mode;
+    let buttons = document.querySelectorAll('.shading-btn');
+    buttons.forEach(b => b.classList.remove('active'));
+    buttons[mode].classList.add('active');
+}
+
 function applyLightingUniforms() {
     let p = currentPreset;
     let u = (name) => gl.getUniformLocation(program, name);
@@ -559,6 +606,7 @@ function applyLightingUniforms() {
     gl.uniform1f(u('uFogB'),           p.fogB);
     gl.uniform1f(u('uDarkness'),       p.darkness);
     gl.uniform1f(u('uShadowDepth'),    p.shadowDepth);
+    gl.uniform1i(gl.getUniformLocation(program, "uShadingMode"), shadingMode);
 }
 
 function render() {
@@ -596,8 +644,44 @@ function render() {
     gl.uniformMatrix4fv(gl.getUniformLocation(program, "projectionMatrix"), false, flatten(p));
     
     applyLightingUniforms();
-    
-    gl.drawArrays(gl.TRIANGLES, 0, points.length);
+
+    if (shadingMode === 0) {
+        // Wireframe mode
+        gl.bindBuffer(gl.ARRAY_BUFFER, wBuffer);
+        gl.vertexAttribPointer(vPosition, 3, gl.FLOAT, false, 0, 0);
+
+        // disable unused attributes
+        gl.disableVertexAttribArray(vColor);
+        gl.disableVertexAttribArray(vNormal);
+        gl.disableVertexAttribArray(vEmissive);
+
+        gl.drawArrays(gl.LINES, 0, wirePoints.length);
+
+    } 
+    else {
+        // Flat/Smooth rendering
+        // positions
+        gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+        gl.vertexAttribPointer(vPosition, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(vPosition);
+
+        // colors
+        gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+        gl.vertexAttribPointer(vColor, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(vColor);
+
+        // normals
+        gl.bindBuffer(gl.ARRAY_BUFFER, nBuffer);
+        gl.vertexAttribPointer(vNormal, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(vNormal);
+
+        // emissive
+        gl.bindBuffer(gl.ARRAY_BUFFER, eBuffer);
+        gl.vertexAttribPointer(vEmissive, 1, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(vEmissive);
+
+        gl.drawArrays(gl.TRIANGLES, 0, points.length);
+    }
     
     requestAnimFrame(render);
 }

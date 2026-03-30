@@ -19,6 +19,7 @@
         varying vec3 fWorldPos; // Pass world position for noise
         varying float fEmissive;
         varying float fHeight;
+        varying vec3 fFlatNormal;
 
         void main() {
             vec4 pos = modelViewMatrix * vPosition;
@@ -27,6 +28,7 @@
             fHeight = vPosition.y; 
             fViewNormal = normalize(mat3(modelViewMatrix) * vNormal);
             fWorldNormal = normalize(vNormal);
+            fFlatNormal = vNormal;
             fColor = vColor;
             fEmissive = vEmissive;
             gl_Position = projectionMatrix * pos;
@@ -35,6 +37,9 @@
 
     <script id="fragment-shader" type="x-shader/x-fragment">
         precision mediump float;
+        
+        uniform int uShadingMode;
+        varying vec3 fFlatNormal;
 
         varying vec3 fColor;
         varying vec3 fViewNormal;
@@ -73,17 +78,58 @@
         }
 
         void main() {
-            vec3 L       = normalize(uLightDir);
-            vec3 Nworld  = normalize(fWorldNormal);
-            float NdL    = dot(Nworld, L);
+        if (uShadingMode == 0) {
+            gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+            return;
+        }
+
+        vec3 L = normalize(uLightDir);
+
+        vec3 Nworld = (uShadingMode == 1)
+            ? normalize(fFlatNormal)
+            : normalize(fWorldNormal);
+
+        float NdL = max(dot(Nworld, L), 0.0);
+
+        vec3 color;
+
+        if (uShadingMode == 2) {
+            // 🌟 SMOOTH = BLINN-PHONG
+
+            vec3 V = normalize(-fPosition);
+            vec3 H = normalize(L + V);
+
+            float diff = NdL;
+            float specPower = 64.0;
+            float spec = pow(max(dot(Nworld, H), 0.0), specPower);
+
+            // Fresnel (makes highlights pop at angles)
+            float fresnel = pow(1.0 - max(dot(V, Nworld), 0.0), 3.0);
+
+            // slightly tinted specular (less plastic)
+            vec3 specularColor = mix(vec3(0.6,0.7,0.8), vec3(1.0), fresnel);
+
+            vec3 specular = specularColor * spec * 0.5;
+
+            vec3 ambient = fColor * uAmbientColor * 0.3;
+            vec3 diffuse = fColor * diff;
+
+            color = ambient + diffuse + specular;
+            float ao = clamp(0.5 + 0.5 * Nworld.y, 0.0, 1.0);
+            color *= ao;
+        } 
+        else {
+            // 🌿 FLAT = YOUR ORIGINAL STYLIZED
 
             float dapple = smoothNoise(fWorldPos.xz * 0.8) * 0.6
-                         + smoothNoise(fWorldPos.xz * 2.1) * 0.4;
+                        + smoothNoise(fWorldPos.xz * 2.1) * 0.4;
             dapple = smoothstep(0.38, 0.72, dapple);
+
             float litNdL = NdL + dapple * 0.35 * step(0.0, NdL);
 
             float diffuse;
-            vec3  sunTint;
+            vec3 sunTint;
+
             if (litNdL > 0.6) {
                 diffuse = 1.0;
                 sunTint = uSunTintHigh;
@@ -96,23 +142,28 @@
             }
 
             vec3 ambient = fColor * uAmbientColor * 0.4;
-            vec3 color   = fColor * sunTint * diffuse;
+
+            color = fColor * sunTint * diffuse;
 
             float shadowMask = 1.0 - smoothstep(-0.05, 0.25, NdL);
             color = mix(color, color + ambient, shadowMask * 0.5);
-            color *= uDarkness;
-
-            if (fEmissive > 0.01) {
-                color = fColor * 2.2 * uDarkness;
-            }
-
-            float dist      = length(fPosition);
-            float fogFactor = exp(-uFogA * dist * dist - uFogB * dist);
-            fogFactor       = clamp(fogFactor, 0.0, 1.0);
-            color = mix(uFogColor, color, fogFactor);
-
-            gl_FragColor = vec4(color, 1.0);
         }
+
+        // global adjustments
+        color *= uDarkness;
+        
+        if (fEmissive > 0.01) {
+            color = fColor * 2.2 * uDarkness;
+        }
+
+        float dist = length(fPosition);
+        float fogFactor = exp(-uFogA * dist * dist - uFogB * dist);
+        fogFactor = clamp(fogFactor, 0.0, 1.0);
+
+        color = mix(uFogColor, color, fogFactor);
+
+        gl_FragColor = vec4(color, 1.0);
+    }
     </script>
 
     <script type="text/javascript" src="webgl-utils.js"></script>
@@ -158,6 +209,11 @@
     </style>
 
     <div style="margin-top: 12px; display: flex; flex-wrap: wrap; justify-content: center; max-width: 600px;">
+        <div style="margin-top: 10px;">
+            <button class="preset-btn shading-btn" onclick="setShading(0)">Wireframe</button>
+            <button class="preset-btn shading-btn" onclick="setShading(1)">Flat</button>
+            <button class="preset-btn shading-btn active" onclick="setShading(2)">Smooth</button>
+        </div>
         <button class="preset-btn active" id="btn-daytime"    onclick="setPreset('daytime')">☀️ Daytime</button>
         <button class="preset-btn"        id="btn-goldenHour" onclick="setPreset('goldenHour')">🌇 Golden Hour</button>
         <button class="preset-btn"        id="btn-sunrise"    onclick="setPreset('sunrise')">🌅 Sunrise</button>
