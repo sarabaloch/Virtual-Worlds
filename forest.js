@@ -217,6 +217,12 @@ function generateTerrain(chunkX, chunkZ) {
             if (r > 0.93) {
                 createRock(x, getHeight(x, z), z);
             }
+
+            let cloudChance = pseudoRandom(x * 0.08, z * 0.08);
+
+            if (cloudChance > 0.995) {
+                createCloud(x, 3.5 + pseudoRandom(x, z) * 1.5, z);
+            }
         }
     }
 }
@@ -383,6 +389,44 @@ function createTreeShadow(x, y, z, radius) {
         let p2 = [x + Math.cos(a1) * radius, yOffset, z + Math.sin(a1) * radius];
         
         pushTri(center, p1, p2, [0, 1, 0], shadowColor);
+    }
+}
+
+function createCloud(cx, cy, cz) {
+    let parts = 6 + Math.floor(pseudoRandom(cx, cz) * 6);
+
+    for (let i = 0; i < parts; i++) {
+        let offsetX = (pseudoRandom(cx + i, cz) - 0.5) * 1.5;
+        let offsetZ = (pseudoRandom(cx, cz + i) - 0.5) * 1.5;
+        let offsetY = (pseudoRandom(cx + i * 2, cz + i * 3)) * 0.4;
+
+        let size = 0.6 + pseudoRandom(cx + i * 5, cz) * 0.8;
+
+        createCloudPuff(
+            cx + offsetX,
+            cy + offsetY,
+            cz + offsetZ,
+            size
+        );
+    }
+}
+
+function createCloudPuff(x, y, z, size) {
+    let sides = 10;
+    let color = [0.95, 0.96, 0.98];
+
+    for (let i = 0; i < sides; i++) {
+        let a = (i / sides) * Math.PI * 2;
+        let b = ((i + 1) / sides) * Math.PI * 2;
+
+        let p1 = [x + Math.cos(a) * size, y, z + Math.sin(a) * size];
+        let p2 = [x + Math.cos(b) * size, y, z + Math.sin(b) * size];
+        let top = [x, y + size * 0.6, z];
+
+        let n = computeNormal(p1, p2, top);
+
+        // Slight emissive so clouds glow softly
+        pushTri(p1, p2, top, n, color, 0.2);
     }
 }
 
