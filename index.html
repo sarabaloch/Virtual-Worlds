@@ -142,7 +142,6 @@
             }
 
             vec3 ambient = fColor * uAmbientColor * 0.4;
-
             color = fColor * sunTint * diffuse;
 
             float shadowMask = 1.0 - smoothstep(-0.05, 0.25, NdL);
