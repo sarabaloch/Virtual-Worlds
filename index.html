@@ -104,14 +104,13 @@
         vec3 color;
 
         if (uShadingMode == 2) {
-
             // Blinn-Phong
-            vec3 V = normalize(-fPosition);
-            vec3 H = normalize(L + V);
+            vec3 V = normalize(-fPosition); //view vector
+            vec3 H = normalize(L + V); //halfway vector between light and view
 
             float diff = NdL;
 
-            float specPower = 32.0;
+            float specPower = 32.0; //higher the spec power shinier it is
             float spec = pow(max(dot(Nworld, H), 0.0), specPower);
 
             //Keep specular subtle and colour-tinted so it doesn't blow out
@@ -136,13 +135,12 @@
          else {
 
             float dapple = smoothNoise(fWorldPos.xz * 0.8) * 0.6
-                        + smoothNoise(fWorldPos.xz * 2.1) * 0.4;
-            dapple = smoothstep(0.38, 0.72, dapple);
+                        + smoothNoise(fWorldPos.xz * 2.1) * 0.4; //2d noise generation
+            dapple = smoothstep(0.38, 0.72, dapple); //reducing harshness
 
             float litNdL = NdL + dapple * 0.35 * step(0.0, NdL);
 
             float t = smoothstep(0.0, 1.0, litNdL);
-
             vec3 sunTint = mix(
                 uSunTintShadow,
                 mix(uSunTintMid, uSunTintHigh, t),
@@ -164,6 +162,8 @@
             color = fColor * 2.2 * uDarkness;
         }
 
+
+        //fog
         float dist = length(fPosition);
         float fogFactor = exp(-uFogA * dist * dist - uFogB * dist);
         fogFactor = clamp(fogFactor, 0.0, 1.0);
