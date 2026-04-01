@@ -96,27 +96,29 @@
         if (uShadingMode == 2) {
 
             vec3 V = normalize(-fPosition);
-            vec3 H = normalize(L + V);
+
+            // Proper Phong reflection (NOT half-vector)
+            vec3 R = reflect(-L, Nworld);
 
             float diff = NdL;
-            float specPower = 64.0;
-            float spec = pow(max(dot(Nworld, H), 0.0), specPower);
 
-            // Fresnel (makes highlights pop at angles)
-            float fresnel = pow(1.0 - max(dot(V, Nworld), 0.0), 3.0);
+            float spec = 0.0;
+            if (NdL > 0.0) {  // ✅ prevent highlights in shadow
+                spec = pow(max(dot(R, V), 0.0), 32.0);
+            }
 
-            // slightly tinted specular (less plastic)
-            vec3 specularColor = mix(vec3(0.6,0.7,0.8), vec3(1.0), fresnel);
+            // MUCH softer + less plastic
+            vec3 specular = vec3(1.0) * spec * 0.15;
 
-            vec3 specular = specularColor * spec * 0.5;
-
-            vec3 ambient = fColor * uAmbientColor * 0.3;
-            vec3 diffuse = fColor * diff;
+            vec3 ambient = fColor * uAmbientColor * 0.5;   // brighter
+            vec3 diffuse = fColor * diff * 1.1;            // slightly boosted
 
             color = ambient + diffuse + specular;
-            float ao = clamp(0.5 + 0.5 * Nworld.y, 0.0, 1.0);
+
+            // softer AO
+            float ao = clamp(0.6 + 0.4 * Nworld.y, 0.0, 1.0);
             color *= ao;
-        } 
+        }
         else {
 
             float dapple = smoothNoise(fWorldPos.xz * 0.8) * 0.6
@@ -125,19 +127,16 @@
 
             float litNdL = NdL + dapple * 0.35 * step(0.0, NdL);
 
-            float diffuse;
-            vec3 sunTint;
+            float t = smoothstep(0.0, 1.0, litNdL);
 
-            if (litNdL > 0.6) {
-                diffuse = 1.0;
-                sunTint = uSunTintHigh;
-            } else if (litNdL > 0.05) {
-                diffuse = 0.62;
-                sunTint = uSunTintMid;
-            } else {
-                diffuse = uShadowDepth;
-                sunTint = uSunTintShadow;
-            }
+            // smooth blending between shadow → mid → light
+            vec3 sunTint = mix(
+                uSunTintShadow,
+                mix(uSunTintMid, uSunTintHigh, t),
+                t
+            );
+
+            float diffuse = mix(uShadowDepth, 1.0, t);
 
             vec3 ambient = fColor * uAmbientColor * 0.4;
             color = fColor * sunTint * diffuse;
