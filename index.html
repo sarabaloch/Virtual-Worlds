@@ -117,7 +117,7 @@
             float ao = clamp(0.6 + 0.4 * Nworld.y, 0.0, 1.0);
             color *= ao;
         } 
-        else {
+         else {
 
             float dapple = smoothNoise(fWorldPos.xz * 0.8) * 0.6
                         + smoothNoise(fWorldPos.xz * 2.1) * 0.4;
@@ -125,19 +125,15 @@
 
             float litNdL = NdL + dapple * 0.35 * step(0.0, NdL);
 
-            float diffuse;
-            vec3 sunTint;
+            float t = smoothstep(0.0, 1.0, litNdL);
 
-            if (litNdL > 0.6) {
-                diffuse = 1.0;
-                sunTint = uSunTintHigh;
-            } else if (litNdL > 0.05) {
-                diffuse = 0.62;
-                sunTint = uSunTintMid;
-            } else {
-                diffuse = uShadowDepth;
-                sunTint = uSunTintShadow;
-            }
+            vec3 sunTint = mix(
+                uSunTintShadow,
+                mix(uSunTintMid, uSunTintHigh, t),
+                t
+            );
+
+            float diffuse = mix(uShadowDepth, 1.0, t);
 
             vec3 ambient = fColor * uAmbientColor * 0.4;
             color = fColor * sunTint * diffuse;
