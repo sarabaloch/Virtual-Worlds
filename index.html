@@ -94,7 +94,6 @@
         vec3 color;
 
         if (uShadingMode == 2) {
-            // 🌟 SMOOTH = BLINN-PHONG
 
             vec3 V = normalize(-fPosition);
             vec3 H = normalize(L + V);
@@ -119,7 +118,6 @@
             color *= ao;
         } 
         else {
-            // 🌿 FLAT = YOUR ORIGINAL STYLIZED
 
             float dapple = smoothNoise(fWorldPos.xz * 0.8) * 0.6
                         + smoothNoise(fWorldPos.xz * 2.1) * 0.4;
@@ -171,55 +169,32 @@
     <script type="text/javascript" src="forest.js"></script>
     <script type="text/javascript" src="objects.js"></script>
 </head>
-<body style="background-color: #1a2a2a; margin: 0; display: flex; flex-direction: column; align-items: center;">
-    <canvas id="gl-canvas" width="1200" height="600" style="border: 1px solid #334444; margin-top: 20px;">
-        WebGL Error
-    </canvas>
+<body style="margin:0; background:#1a2a2a; text-align:center; color:white;">
 
-    <div style="color: white; font-family: sans-serif; text-align: center; margin-top: 10px;">
-        <h3>Hidden Forest - Project 1</h3>
-        <p><b>WASD:</b> Move around the terrain &nbsp;|&nbsp; <b>Arrow Keys:</b> Look around</p>
-    </div>
+<canvas id="gl-canvas" width="1200" height="600"></canvas>
 
-    <style>
-        .preset-btn {
-            padding: 8px 18px;
-            margin: 4px;
-            border: 2px solid rgba(255,255,255,0.25);
-            border-radius: 20px;
-            background: rgba(255,255,255,0.08);
-            color: #ddd;
-            font-family: sans-serif;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.2s;
-            letter-spacing: 0.5px;
-        }
-        .preset-btn:hover {
-            background: rgba(255,255,255,0.18);
-            border-color: rgba(255,255,255,0.5);
-            color: #fff;
-        }
-        .preset-btn.active {
-            background: rgba(255,255,255,0.28);
-            border-color: #fff;
-            color: #fff;
-            font-weight: bold;
-        }
-    </style>
+<div style="margin-top:10px;">
+    WASD move | Arrow keys look
+    SPACEBAR Go Up | LCRTL Go Down
+</div>
 
-    <div style="margin-top: 12px; display: flex; flex-wrap: wrap; justify-content: center; max-width: 600px;">
-        <div style="margin-top: 10px;">
-            <button class="preset-btn shading-btn" onclick="setShading(0)">Wireframe</button>
-            <button class="preset-btn shading-btn" onclick="setShading(1)">Flat</button>
-            <button class="preset-btn shading-btn active" onclick="setShading(2)">Smooth</button>
-        </div>
-        <button class="preset-btn active" id="btn-daytime"    onclick="setPreset('daytime')">☀️ Daytime</button>
-        <button class="preset-btn"        id="btn-goldenHour" onclick="setPreset('goldenHour')">🌇 Golden Hour</button>
-        <button class="preset-btn"        id="btn-sunrise"    onclick="setPreset('sunrise')">🌅 Sunrise</button>
-        <button class="preset-btn"        id="btn-sunset"     onclick="setPreset('sunset')">🌆 Sunset</button>
-        <button class="preset-btn"        id="btn-blueHour"   onclick="setPreset('blueHour')">🌃 Blue Hour</button>
-        <button class="preset-btn"        id="btn-nighttime"  onclick="setPreset('nighttime')">🌙 Nighttime</button>
-    </div>
+<!-- SIMPLE UI -->
+<div style="margin-top:10px;">
+
+    <button onclick="setShading(0)">Wireframe</button>
+    <button onclick="setShading(1)">Flat</button>
+    <button onclick="setShading(2)">Smooth</button>
+
+    <br><br>
+
+    <button onclick="setPreset('daytime')">Day</button>
+    <button onclick="setPreset('goldenHour')">Golden</button>
+    <button onclick="setPreset('sunrise')">Sunrise</button>
+    <button onclick="setPreset('sunset')">Sunset</button>
+    <button onclick="setPreset('blueHour')">Blue</button>
+    <button onclick="setPreset('nighttime')">Night</button>
+
+</div>
+
 </body>
 </html>
