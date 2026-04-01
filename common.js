@@ -246,7 +246,7 @@ return[[1,0,0,0],[0,c,s,0],[0,-s,c,0],[0,0,0,1]];}
 function rotateY(d){var c=Math.cos(d*Math.PI/180),s=Math.sin(d*Math.PI/180);
 return[[c,0,-s,0],[0,1,0,0],[s,0,c,0],[0,0,0,1]];}
 
-// ================= NORMAL =================
+//normal for pushtri
 function computeNormal(a, b, c) {
     let u = [b[0]-a[0], b[1]-a[1], b[2]-a[2]];
     let v = [c[0]-a[0], c[1]-a[1], c[2]-a[2]];
@@ -258,6 +258,8 @@ function computeNormal(a, b, c) {
     ]);
 }
 
+//normal for pushtrismooth
+//for smooth shading
 function getNormal(x, z) {
     let eps = 0.01;
 

@@ -129,7 +129,7 @@
             color = ambient + diffuse + specular;
 
             //Soft ambient occlusion based on normal orientation
-            float ao = clamp(0.6 + 0.4 * Nworld.y, 0.0, 1.0);
+            float ao = clamp(0.78 + 0.22 * Nworld.y, 0.0, 1.0);
             color *= ao;
         } 
          else {
