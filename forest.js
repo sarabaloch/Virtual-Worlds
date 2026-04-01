@@ -310,11 +310,11 @@ function pushTri(a, b, c, n, col, emitStrength) {
     colors.push(col, col, col);
     emissive.push(e, e, e);
 
-    // edges (wireframe)
+    //edges (wireframe)
     wirePoints.push(a, b, b, c, c, a);
 }
 
-function pushTriSmooth(a, b, c) {
+function pushTriSmooth(a, b, c, col) {
     points.push(a, b, c);
 
     normals.push(
@@ -323,12 +323,8 @@ function pushTriSmooth(a, b, c) {
         getNormal(c[0], c[2])
     );
 
-    // DIFFERENT color per vertex
-    colors.push(
-        getColor(a[0], a[2]),
-        getColor(b[0], b[2]),
-        getColor(c[0], c[2])
-    );
+    //color per vertex
+    colors.push(col, col, col);
 
     emissive.push(0, 0, 0);
 }

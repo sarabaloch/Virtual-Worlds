@@ -273,14 +273,3 @@ function getNormal(x, z) {
     let len = Math.sqrt(nx*nx + ny*ny + nz*nz);
     return [nx/len, ny/len, nz/len];
 }
-
-function getColor(x, z) {
-    let h = getHeight(x, z);
-    let shade = 0.25 + h * 0.15;
-
-    return [
-        0.10 + shade * 0.2,
-        0.30 + shade * 0.6,
-        0.10 + shade * 0.2
-    ];
-}
