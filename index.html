@@ -108,8 +108,15 @@
             // Keep specular subtle and colour-tinted so it doesn't blow out
             vec3 specular = fColor * 0.15 * spec;
 
-            vec3 ambient = fColor * uAmbientColor * 0.35;
-            vec3 diffuse = fColor * uSunTintHigh * diff;
+            // Shadow faces pick up uSunTintShadow so they stay hue-correct instead
+            // of going grey-blue from a raw ambient colour multiply.
+            float shadowBlend = 1.0 - diff;
+            vec3 litTint    = mix(uSunTintMid, uSunTintHigh, diff);
+            vec3 shadowTint = uSunTintShadow;
+            vec3 finalTint  = mix(litTint, shadowTint, shadowBlend * 0.6);
+
+            vec3 ambient = fColor * uAmbientColor * 0.45;
+            vec3 diffuse = fColor * finalTint * max(diff, uShadowDepth);
 
             color = ambient + diffuse + specular;
 
@@ -159,29 +166,28 @@
     }
     </script>
 
+    <style>
+        body { margin: 0; background: #1a2a2a; text-align: center; color: white; font-family: sans-serif; }
+        #controls { display: inline-block; margin-top: 10px; text-align: left; background: rgba(0,0,0,0.45); border-radius: 8px; padding: 12px 18px; font-size: 13px; max-width: 760px; width: 100%; box-sizing: border-box; }
+        .ctrl-row { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-bottom: 8px; align-items: center; }
+        .ctrl-group { display: flex; align-items: center; gap: 6px; }
+        .ctrl-group label { color: #aac; min-width: 44px; }
+        .ctrl-group input[type=range] { width: 110px; }
+        .ctrl-group span { color: #eee; min-width: 40px; font-size: 12px; }
+        .divider { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 6px 0; }
+        .hint { color: #99b; font-size: 12px; }
+        button { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        button:hover { background: rgba(255,255,255,0.2); }
+    </style>
     <script type="text/javascript" src="webgl-utils.js"></script>
     <script type="text/javascript" src="initShaders.js"></script>
     <script type="text/javascript" src="common.js"></script>
-    <script type="text/javascript" src="forest.js"></script>
     <script type="text/javascript" src="objects.js"></script>
+    <script type="text/javascript" src="forest.js"></script>
 </head>
 <body>
 
 <canvas id="gl-canvas" width="1200" height="600"></canvas>
-
-<style>
-    body { margin: 0; background: #1a2a2a; text-align: center; color: white; font-family: sans-serif; }
-    #controls { display: inline-block; margin-top: 10px; text-align: left; background: rgba(0,0,0,0.45); border-radius: 8px; padding: 12px 18px; font-size: 13px; max-width: 760px; width: 100%; box-sizing: border-box; }
-    .ctrl-row { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-bottom: 8px; align-items: center; }
-    .ctrl-group { display: flex; align-items: center; gap: 6px; }
-    .ctrl-group label { color: #aac; min-width: 44px; }
-    .ctrl-group input[type=range] { width: 110px; }
-    .ctrl-group span { color: #eee; min-width: 40px; font-size: 12px; }
-    .divider { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 6px 0; }
-    .hint { color: #99b; font-size: 12px; }
-    button { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
-    button:hover { background: rgba(255,255,255,0.2); }
-</style>
 
 <div id="controls">
     <div class="ctrl-row">
