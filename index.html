@@ -26,9 +26,12 @@
             fPosition = pos.xyz;
             fWorldPos = vPosition.xyz; 
             fHeight = vPosition.y; 
+
+            //normal transformations
             fViewNormal = normalize(mat3(modelViewMatrix) * vNormal);
-            fWorldNormal = normalize(vNormal);
-            fFlatNormal = vNormal;
+            fWorldNormal = normalize(vNormal); //storing og norm
+            fFlatNormal = vNormal; 
+            
             fColor = vColor;
             fEmissive = vEmissive;
             gl_Position = projectionMatrix * pos;
