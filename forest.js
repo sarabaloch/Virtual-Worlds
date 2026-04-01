@@ -16,15 +16,17 @@ var vPosition, vColor, vNormal, vEmissive;
 var camera = {
     position: [0.0, 0.2, 5.0], // start slightly above ground to avoid immediate collision
     yaw: -90.0,   // facing towards negative Z
-    pitch: 0.0, // level with horizon
+    pitch: 0.0,   // level with horizon
+    roll: 0.0,    // rotation around forward axis (Q/E keys)
     forward: [0, 0, -1], // will be calculated from yaw/pitch
-    right: [1, 0, 0], // will be calculated from forward
-    up: [0, 1, 0] // world up is always Y-axis
+    right: [1, 0, 0],    // will be calculated from forward
+    up: [0, 1, 0]        // will be calculated from forward + roll
 };
 
 // input keys
 var keys = {
     w: false, s: false, a: false, d: false,
+    q: false, e: false,
     arrowUp: false, arrowDown: false, arrowLeft: false, arrowRight: false,
     space: false, ctrl: false
 };
@@ -34,7 +36,13 @@ const MOVE_SPEED = 5.0; // how fast u move forward/back
 const VERTICAL_SPEED = 3.0; // how fast u move up or down
 const CHUNK_SIZE = 10; // how big each terrain chunk is in world units
 let currentChunkX = null; // which chunk the camera is currently in (used for terrain generation)
-let currentChunkZ = null; 
+let currentChunkZ = null;
+
+// runtime-adjustable view and movement settings
+var viewFOV = 75;       // field of view in degrees
+var viewFar = 100.0;    // far clipping plane
+var viewNear = 0.1;     // near clipping plane
+var moveSpeedMult = 1.0; // movement speed multiplier (adjusted via UI slider)
 
 var program; 
 var lastTimestamp = 0; // for tracking time between frames
@@ -69,6 +77,8 @@ window.onload = function init() { // initialize WebGL context, set up event list
         if (key === 's') keys.s = true;
         if (key === 'a') keys.a = true;
         if (key === 'd') keys.d = true;
+        if (key === 'q') keys.q = true;
+        if (key === 'e') keys.e = true;
         
         if (key === 'arrowup')    { keys.arrowUp    = true; event.preventDefault(); }
         if (key === 'arrowdown')  { keys.arrowDown  = true; event.preventDefault(); }
@@ -86,6 +96,8 @@ window.onload = function init() { // initialize WebGL context, set up event list
         if (key === 's') keys.s = false;
         if (key === 'a') keys.a = false;
         if (key === 'd') keys.d = false;
+        if (key === 'q') keys.q = false;
+        if (key === 'e') keys.e = false;
         if (key === 'arrowup')    keys.arrowUp    = false;
         if (key === 'arrowdown')  keys.arrowDown  = false;
         if (key === 'arrowleft')  keys.arrowLeft  = false;
@@ -105,35 +117,60 @@ function flattenScalars(arr) {
     return new Float32Array(arr);
 }
 
-// function to update camera forward and right vectors based on current yaw and pitch angles. calculates forward vector from spherical coordinates, then derives right vector as perpendicular to forward and world up. also normalizes both vectors to ensure consistent movement speed in all directions.
+// Rebuilds camera.forward, camera.right, and camera.up from current yaw, pitch, and roll.
+// forward comes from spherical coords (yaw+pitch).
+// right is perpendicular to forward in the world-horizontal plane, then rolled.
+// up is derived by rotating the world-up vector around the forward axis by roll.
 function updateCameraVectors() {
-    var yawRad = camera.yaw * Math.PI / 180;
+    var yawRad   = camera.yaw   * Math.PI / 180;
     var pitchRad = camera.pitch * Math.PI / 180;
-    
+    var rollRad  = camera.roll  * Math.PI / 180;
+
+    // forward vector from yaw + pitch
     camera.forward[0] = Math.cos(yawRad) * Math.cos(pitchRad);
     camera.forward[1] = Math.sin(pitchRad);
     camera.forward[2] = Math.sin(yawRad) * Math.cos(pitchRad);
-    
-    var len = Math.sqrt(camera.forward[0]*camera.forward[0] + 
-                        camera.forward[1]*camera.forward[1] + 
+
+    var len = Math.sqrt(camera.forward[0]*camera.forward[0] +
+                        camera.forward[1]*camera.forward[1] +
                         camera.forward[2]*camera.forward[2]);
     camera.forward[0] /= len;
     camera.forward[1] /= len;
     camera.forward[2] /= len;
-    
-    camera.right[0] = camera.forward[2];
-    camera.right[1] = 0;
-    camera.right[2] = -camera.forward[0];
-    len = Math.sqrt(camera.right[0]*camera.right[0] + camera.right[2]*camera.right[2]);
-    if (len > 0) {
-        camera.right[0] /= len;
-        camera.right[2] /= len;
-    }
+
+    // world-up reference vector
+    var worldUp = [0, 1, 0];
+
+    // base right = forward x worldUp, then normalise
+    var baseRight = [
+        camera.forward[1]*worldUp[2] - camera.forward[2]*worldUp[1],
+        camera.forward[2]*worldUp[0] - camera.forward[0]*worldUp[2],
+        camera.forward[0]*worldUp[1] - camera.forward[1]*worldUp[0]
+    ];
+    len = Math.sqrt(baseRight[0]*baseRight[0] + baseRight[1]*baseRight[1] + baseRight[2]*baseRight[2]);
+    if (len > 0) { baseRight[0] /= len; baseRight[1] /= len; baseRight[2] /= len; }
+
+    // base up = right x forward (perpendicular to both)
+    var baseUp = [
+        baseRight[1]*camera.forward[2] - baseRight[2]*camera.forward[1],
+        baseRight[2]*camera.forward[0] - baseRight[0]*camera.forward[2],
+        baseRight[0]*camera.forward[1] - baseRight[1]*camera.forward[0]
+    ];
+
+    // apply roll: rotate baseRight and baseUp around forward axis by rollRad
+    var cosR = Math.cos(rollRad), sinR = Math.sin(rollRad);
+    camera.right[0] = cosR * baseRight[0] + sinR * baseUp[0];
+    camera.right[1] = cosR * baseRight[1] + sinR * baseUp[1];
+    camera.right[2] = cosR * baseRight[2] + sinR * baseUp[2];
+
+    camera.up[0] = -sinR * baseRight[0] + cosR * baseUp[0];
+    camera.up[1] = -sinR * baseRight[1] + cosR * baseUp[1];
+    camera.up[2] = -sinR * baseRight[2] + cosR * baseUp[2];
 }
 
 // function to update camera position based on currently pressed movement keys (WASD for horizontal movement, space/ctrl for vertical). calculates movement based on camera forward and right vectors, applies speed scaling and deltatime for frame rate independence. also checks terrain height at new position to prevent sinking below ground level.
 function updateMovement(deltaTime) {
-    var speed = (MOVE_SPEED * 0.5) * deltaTime;
+    var speed = (MOVE_SPEED * 0.5) * moveSpeedMult * deltaTime;
     var moveDelta = [0, 0, 0];
     
     if (keys.w) {
@@ -426,6 +463,24 @@ function setShading(mode) {
     buttons[mode].classList.add('active');
 }
 
+// called by HTML sliders to update runtime view/speed settings
+function setFOV(val) {
+    viewFOV = parseFloat(val);
+    document.getElementById('fov-val').textContent = Math.round(val) + '°';
+}
+function setFar(val) {
+    viewFar = parseFloat(val);
+    document.getElementById('far-val').textContent = Math.round(val);
+}
+function setNear(val) {
+    viewNear = parseFloat(val);
+    document.getElementById('near-val').textContent = parseFloat(val).toFixed(2);
+}
+function setMoveSpeed(val) {
+    moveSpeedMult = parseFloat(val);
+    document.getElementById('speed-val').textContent = parseFloat(val).toFixed(1) + 'x';
+}
+
 function applyLightingUniforms() {
     let p = currentPreset;
     let u = (name) => gl.getUniformLocation(program, name);
@@ -452,6 +507,8 @@ function render() {
     if (keys.arrowDown)  camera.pitch -= rotationSpeed;
     if (keys.arrowLeft)  camera.yaw   -= rotationSpeed;
     if (keys.arrowRight) camera.yaw   += rotationSpeed;
+    if (keys.q)          camera.roll  -= rotationSpeed;
+    if (keys.e)          camera.roll  += rotationSpeed;
 
     camera.pitch = Math.max(-89, Math.min(89, camera.pitch));
 
@@ -463,7 +520,7 @@ function render() {
     
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     
-    let p = perspective(75, gl.canvas.width / gl.canvas.height, 0.1, 100.0);
+    let p = perspective(viewFOV, gl.canvas.width / gl.canvas.height, viewNear, viewFar);
     
     let target = [
         camera.position[0] + camera.forward[0],

@@ -95,26 +95,26 @@
 
         if (uShadingMode == 2) {
 
+            // Blinn-Phong
             vec3 V = normalize(-fPosition);
             vec3 H = normalize(L + V);
 
             float diff = NdL;
-            float specPower = 64.0;
+
+            // Tight but modest specular — only visible on very shiny surfaces
+            float specPower = 32.0;
             float spec = pow(max(dot(Nworld, H), 0.0), specPower);
 
-            // Fresnel (makes highlights pop at angles)
-            float fresnel = pow(1.0 - max(dot(V, Nworld), 0.0), 3.0);
+            // Keep specular subtle and colour-tinted so it doesn't blow out
+            vec3 specular = fColor * 0.15 * spec;
 
-            // slightly tinted specular (less plastic)
-            vec3 specularColor = mix(vec3(0.6,0.7,0.8), vec3(1.0), fresnel);
-
-            vec3 specular = specularColor * spec * 0.5;
-
-            vec3 ambient = fColor * uAmbientColor * 0.3;
-            vec3 diffuse = fColor * diff;
+            vec3 ambient = fColor * uAmbientColor * 0.35;
+            vec3 diffuse = fColor * uSunTintHigh * diff;
 
             color = ambient + diffuse + specular;
-            float ao = clamp(0.5 + 0.5 * Nworld.y, 0.0, 1.0);
+
+            // Soft ambient occlusion based on normal orientation
+            float ao = clamp(0.6 + 0.4 * Nworld.y, 0.0, 1.0);
             color *= ao;
         } 
         else {
@@ -169,29 +169,68 @@
     <script type="text/javascript" src="forest.js"></script>
     <script type="text/javascript" src="objects.js"></script>
 </head>
-<body style="margin:0; background:#1a2a2a; text-align:center; color:white;">
+<body>
 
 <canvas id="gl-canvas" width="1200" height="600"></canvas>
 
-<div style="margin-top:10px;">
-    WASD move | Arrow keys look
-    SPACEBAR Go Up | LCRTL Go Down
-</div>
-<div style="margin-top:10px;">
+<style>
+    body { margin: 0; background: #1a2a2a; text-align: center; color: white; font-family: sans-serif; }
+    #controls { display: inline-block; margin-top: 10px; text-align: left; background: rgba(0,0,0,0.45); border-radius: 8px; padding: 12px 18px; font-size: 13px; max-width: 760px; width: 100%; box-sizing: border-box; }
+    .ctrl-row { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-bottom: 8px; align-items: center; }
+    .ctrl-group { display: flex; align-items: center; gap: 6px; }
+    .ctrl-group label { color: #aac; min-width: 44px; }
+    .ctrl-group input[type=range] { width: 110px; }
+    .ctrl-group span { color: #eee; min-width: 40px; font-size: 12px; }
+    .divider { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 6px 0; }
+    .hint { color: #99b; font-size: 12px; }
+    button { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    button:hover { background: rgba(255,255,255,0.2); }
+</style>
 
-    <button onclick="setShading(0)">Wireframe</button>
-    <button onclick="setShading(1)">Flat</button>
-    <button onclick="setShading(2)">Smooth</button>
-
-    <br><br>
-
-    <button onclick="setPreset('daytime')">Day</button>
-    <button onclick="setPreset('goldenHour')">Golden</button>
-    <button onclick="setPreset('sunrise')">Sunrise</button>
-    <button onclick="setPreset('sunset')">Sunset</button>
-    <button onclick="setPreset('blueHour')">Blue</button>
-    <button onclick="setPreset('nighttime')">Night</button>
-
+<div id="controls">
+    <div class="ctrl-row">
+        <strong style="color:#cce; font-size:13px;">Shading:</strong>
+        <button onclick="setShading(0)">Wireframe</button>
+        <button onclick="setShading(1)">Flat</button>
+        <button onclick="setShading(2)">Smooth</button>
+        &nbsp;&nbsp;
+        <strong style="color:#cce; font-size:13px;">Lighting:</strong>
+        <button onclick="setPreset('daytime')">Day</button>
+        <button onclick="setPreset('goldenHour')">Golden</button>
+        <button onclick="setPreset('sunrise')">Sunrise</button>
+        <button onclick="setPreset('sunset')">Sunset</button>
+        <button onclick="setPreset('blueHour')">Blue</button>
+        <button onclick="setPreset('nighttime')">Night</button>
+    </div>
+    <hr class="divider">
+    <div class="ctrl-row">
+        <strong style="color:#cce; font-size:13px;">View Bounds:</strong>
+        <div class="ctrl-group">
+            <label>FOV</label>
+            <input type="range" min="30" max="120" value="75" step="1" oninput="setFOV(this.value)">
+            <span id="fov-val">75°</span>
+        </div>
+        <div class="ctrl-group">
+            <label>Near</label>
+            <input type="range" min="0.01" max="2.0" value="0.1" step="0.01" oninput="setNear(this.value)">
+            <span id="near-val">0.10</span>
+        </div>
+        <div class="ctrl-group">
+            <label>Far</label>
+            <input type="range" min="20" max="500" value="100" step="5" oninput="setFar(this.value)">
+            <span id="far-val">100</span>
+        </div>
+        <div class="ctrl-group">
+            <label>Speed</label>
+            <input type="range" min="0.1" max="5.0" value="1.0" step="0.1" oninput="setMoveSpeed(this.value)">
+            <span id="speed-val">1.0x</span>
+        </div>
+    </div>
+    <hr class="divider">
+    <div class="hint">
+        <b style="color:#cce">Move:</b> WASD &nbsp;|&nbsp; <b style="color:#cce">Look:</b> Arrow keys &nbsp;|&nbsp;
+        <b style="color:#cce">Roll:</b> Q / E &nbsp;|&nbsp; <b style="color:#cce">Up/Down:</b> Space / LCtrl
+    </div>
 </div>
 
 </body>
