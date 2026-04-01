@@ -4,18 +4,18 @@
     <title>Hidden Forest - Project 1</title>
 
     <script id="vertex-shader" type="x-shader/x-vertex">
-        attribute vec4 vPosition;
+        attribute vec4 vPosition; //position of vertex from points[]
         attribute vec3 vColor;
         attribute vec3 vNormal;
         attribute float vEmissive;
 
-        uniform mat4 modelViewMatrix;
-        uniform mat4 projectionMatrix;
+        uniform mat4 modelViewMatrix; //transformation matrix 
+        uniform mat4 projectionMatrix; //for perspective
 
         varying vec3 fColor;
         varying vec3 fViewNormal;
         varying vec3 fWorldNormal;
-        varying vec3 fPosition;
+        varying vec3 fPosition; 
         varying vec3 fWorldPos; //world position for noise
         varying float fEmissive;
         varying float fHeight;
@@ -51,18 +51,23 @@
 
         uniform float fogDensity;
 
-        // Lighting uniforms — set by JS presets
         uniform vec3  uLightDir;
+
+        //different sun shades
         uniform vec3  uSunTintHigh;   
         uniform vec3  uSunTintMid;    
         uniform vec3  uSunTintShadow; 
+
         uniform vec3  uAmbientColor;
         uniform vec3  uFogColor;
-        uniform float uFogA;          // fog exponent coefficients
-        uniform float uFogB;
-        uniform float uDarkness;      // overall scene brightness multiplier
-        uniform float uShadowDepth;   // how dark the shadow band gets
 
+        //fog strength
+        uniform float uFogA;
+        uniform float uFogB;
+        uniform float uDarkness; //overall scene brightness multiplier
+        uniform float uShadowDepth; //how dark shadows gets
+
+        //Noise functions
         float hash(vec2 p) {
             return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
         }
@@ -101,11 +106,10 @@
 
             float diff = NdL;
 
-            // Tight but modest specular — only visible on very shiny surfaces
             float specPower = 32.0;
             float spec = pow(max(dot(Nworld, H), 0.0), specPower);
 
-            // Keep specular subtle and colour-tinted so it doesn't blow out
+            //Keep specular subtle and colour-tinted so it doesn't blow out
             vec3 specular = fColor * 0.15 * spec;
 
             // Shadow faces pick up uSunTintShadow so they stay hue-correct instead
@@ -120,7 +124,7 @@
 
             color = ambient + diffuse + specular;
 
-            // Soft ambient occlusion based on normal orientation
+            //Soft ambient occlusion based on normal orientation
             float ao = clamp(0.6 + 0.4 * Nworld.y, 0.0, 1.0);
             color *= ao;
         } 
@@ -149,7 +153,6 @@
             color = mix(color, color + ambient, shadowMask * 0.5);
         }
 
-        // global adjustments
         color *= uDarkness;
         
         if (fEmissive > 0.01) {

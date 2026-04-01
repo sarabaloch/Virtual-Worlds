@@ -1,15 +1,13 @@
-"use strict";
-
 // global variables
 var gl;
 var points = [];
 var colors = [];
-var normals = [];
-var emissive = [];
+var normals = []; //stores normals per vertwx for lighting
+var emissive = []; //stores emission values per vertex for glow
 
 //buffers
 var vBuffer, cBuffer, nBuffer, eBuffer;
-var wBuffer;
+var wBuffer; //for wireframe
 var vPosition, vColor, vNormal, vEmissive;
 
 // camera state
@@ -47,13 +45,12 @@ var moveSpeedMult = 1.0; // movement speed multiplier (adjusted via UI slider)
 var program; 
 var lastTimestamp = 0; // for tracking time between frames
 
-//fir switching between shading modes
+//for switching between shading modes
 var shadingMode = 2;
 var wirePoints = []; 
-// 0 = wireframe, 1 = flat, 2 = smooth (default)
+//0 = wireframe, 1 = flat, 2 = smooth (default)
 
-// precompute a few lighting presets for different times of day
-window.onload = function init() { // initialize WebGL context, set up event listeners, and start render loop
+window.onload = function init() {
     var canvas = document.getElementById("gl-canvas");
     gl = WebGLUtils.setupWebGL(canvas);
     if (!gl) { alert("WebGL isn't available"); }
@@ -67,9 +64,9 @@ window.onload = function init() { // initialize WebGL context, set up event list
     program = initShaders(gl, "vertex-shader", "fragment-shader");
     gl.useProgram(program);
 
-    regenerateTerrain(false); 
+    regenerateTerrain(); //generates terrain around camera position
 
-    // set up keyboard input listeners for movement and looking around
+    //set up keyboard input listeners for movement and looking around
     window.addEventListener('keydown', function(event) {
         const key = event.key.toLowerCase();
         
@@ -279,7 +276,8 @@ function generateTerrain(chunkX, chunkZ) {
     }
 }
 
-function regenerateTerrain(skipSun) {
+//for infinite terrain effect
+function regenerateTerrain() {
     let newChunkX = Math.floor(camera.position[0] / CHUNK_SIZE);
     let newChunkZ = Math.floor(camera.position[2] / CHUNK_SIZE);
     
@@ -336,6 +334,12 @@ function pushTriSmooth(a, b, c) {
 }
 
 function sendToGPU() {
+    //we are declaring buffers and all as global 
+    //because when the wireframe shading was done 
+    //the edges were showing in smooth and flat as well
+    //therefore the global declaration ensured that in switching
+    // between modes nothing from the previous was still
+    //stored in the buffer
     vPosition = gl.getAttribLocation(program, "vPosition");
     vColor    = gl.getAttribLocation(program, "vColor");
     vNormal   = gl.getAttribLocation(program, "vNormal");
