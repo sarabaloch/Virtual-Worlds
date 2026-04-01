@@ -179,12 +179,12 @@ function updateMovement(deltaTime) {
         moveDelta[2] -= camera.forward[2] * speed;
     }
     if (keys.a) {
-        moveDelta[0] += camera.right[0] * speed;
-        moveDelta[2] += camera.right[2] * speed;
-    }
-    if (keys.d) {
         moveDelta[0] -= camera.right[0] * speed;
         moveDelta[2] -= camera.right[2] * speed;
+    }
+    if (keys.d) {
+        moveDelta[0] += camera.right[0] * speed;
+        moveDelta[2] += camera.right[2] * speed;
     }
 
     var vSpeed = VERTICAL_SPEED * deltaTime;
